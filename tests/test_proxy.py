@@ -1,26 +1,41 @@
 import json
-from typing import Tuple
 
 import pytest
 import requests
 from pytest_httpserver import HTTPServer
 from werkzeug import Request as WerkzeugRequest
+from werkzeug.datastructures import Headers
 
-from localstack.http import Request, Response, Router
-from localstack.http.client import SimpleRequestsClient
-from localstack.http.dispatcher import handler_dispatcher
-from localstack.http.hypercorn import HypercornServer
-from localstack.http.proxy import Proxy, ProxyHandler, forward
+from rolo import Request, Response
+from rolo.client import SimpleRequestsClient
+from rolo.proxy import Proxy, ProxyHandler, forward
 
 
 @pytest.fixture
-def router_server(serve_asgi_adapter) -> Tuple[Router, HypercornServer]:
-    """Creates a new Router with a handler dispatcher, serves it through a newly created ASGI server, and returns
+def router_server(wsgi_router_server):
+    """Creates a new Router with a handler dispatcher, serves it through a newly created server, and returns
     both the router and the server.
     """
-    router = Router(dispatcher=handler_dispatcher())
-    app = WerkzeugRequest.application(router.dispatch)
-    return router, serve_asgi_adapter(app)
+    yield wsgi_router_server
+
+
+def echo_request_metadata_handler(request: WerkzeugRequest) -> Response:
+    """
+    Simple request handler that returns the incoming request metadata (method, path, url, headers).
+
+    :param request: the incoming HTTP request
+    :return: an HTTP response
+    """
+    response = Response()
+    response.set_json(
+        {
+            "method": request.method,
+            "path": request.path,
+            "url": request.url,
+            "headers": dict(Headers(request.headers)),
+        }
+    )
+    return response
 
 
 class TestPathForwarder:
@@ -146,7 +161,7 @@ class TestPathForwarder:
         backend = httpserver
 
         def _handler(request: WerkzeugRequest):
-            from localstack.http.request import get_raw_path
+            from rolo.request import get_raw_path
 
             data = {"path": get_raw_path(request), "query": request.query_string.decode("utf-8")}
             return Response(json.dumps(data), mimetype="application/json")
@@ -168,12 +183,10 @@ class TestPathForwarder:
 
 
 class TestProxy:
-    def test_proxy_with_custom_client(
-        self, httpserver: HTTPServer, httpserver_echo_request_metadata
-    ):
+    def test_proxy_with_custom_client(self, httpserver: HTTPServer):
         """The Proxy class allows the injection of a custom HTTP client which can attach default headers to every
         request. this test verifies that this works through the proxy implementation."""
-        httpserver.expect_request("/").respond_with_handler(httpserver_echo_request_metadata)
+        httpserver.expect_request("/").respond_with_handler(echo_request_metadata_handler)
 
         with SimpleRequestsClient() as client:
             client.session.headers["X-My-Custom-Header"] = "hello world"

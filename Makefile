@@ -23,7 +23,7 @@ format:
 	$(VENV_RUN); python -m isort .; python -m black .
 
 test: venv
-	$(VENV_RUN); python -m pytest --cov $(ROOT_MODULE)
+	$(VENV_RUN); python -m pytest
 
 test-coverage: venv
 	$(VENV_RUN); coverage run --source=$(ROOT_MODULE) -m pytest tests && coverage lcov -o .coverage.lcov

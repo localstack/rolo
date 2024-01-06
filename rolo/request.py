@@ -9,8 +9,6 @@ from werkzeug.datastructures import Headers, MultiDict
 from werkzeug.test import encode_multipart
 from werkzeug.wrappers.request import Request as WerkzeugRequest
 
-from localstack.utils import strings
-
 
 def dummy_wsgi_environment(
     method: str = "GET",
@@ -77,8 +75,12 @@ def dummy_wsgi_environment(
     if headers:
         set_environment_headers(environ, headers)
 
-    if not body or isinstance(body, (str, bytes)):
-        data = strings.to_bytes(body) if body else b""
+    if not body:
+        body = b""
+
+    if isinstance(body, (str, bytes)):
+        data = body.encode("utf-8") if isinstance(body, str) else body
+
         wsgi_input = BytesIO(data)
         if "CONTENT_LENGTH" not in environ:
             # try to determine content length from body
@@ -147,7 +149,8 @@ class Request(WerkzeugRequest):
         raw_path: str = None,
     ):
         # decode query string if necessary (latin-1 is what werkzeug would expect)
-        query_string = strings.to_str(query_string, "latin-1")
+        if isinstance(query_string, bytes):
+            query_string = query_string.decode("latin-1")
 
         # create the WSGIEnvironment dictionary that represents this request
         environ = dummy_wsgi_environment(
@@ -210,13 +213,13 @@ def get_raw_path(request) -> str:
     raise ValueError("cannot extract raw path from request object %s" % request)
 
 
-def get_full_raw_path(request) -> str:
+def get_full_raw_path(request: WerkzeugRequest) -> str:
     """
     Returns the full raw request path (with original URL encoding), including the query string.
     This is _not_ equal to request.url, since there the path section would be url-encoded while the query part will be
     (partly) url-decoded.
     """
-    query_str = f"?{strings.to_str(request.query_string)}" if request.query_string else ""
+    query_str = f"?{request.query_string.decode('latin1')}" if request.query_string else ""
     raw_path = f"{get_raw_path(request)}{query_str}"
     return raw_path
 

@@ -1,9 +1,7 @@
 import json
-from typing import Any, Dict, Iterable, Union
+from typing import Any, Dict, Iterable, Type, Union
 
 from werkzeug.wrappers import Response as WerkzeugResponse
-
-from localstack.utils.common import CustomEncoder
 
 
 class Response(WerkzeugResponse):
@@ -24,14 +22,15 @@ class Response(WerkzeugResponse):
         self._on_close.extend(other._on_close)
         self.headers.update(other.headers)
 
-    def set_json(self, doc: Any):
+    def set_json(self, doc: Any, cls: Type[json.JSONEncoder] = None):
         """
         Serializes the given dictionary using localstack's ``CustomEncoder`` into a json response, and sets the
         mimetype automatically to ``application/json``.
 
         :param doc: the response dictionary to be serialized as JSON
+        :param cls: the JSON encoder class to use for serializing the passed document
         """
-        self.data = json.dumps(doc, cls=CustomEncoder)
+        self.data = json.dumps(doc, cls=cls)
         self.mimetype = "application/json"
 
     def set_response(self, response: Union[str, bytes, bytearray, Iterable[bytes]]):

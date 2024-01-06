@@ -3,8 +3,8 @@ from typing import Any, Dict
 import pytest
 from werkzeug.exceptions import NotFound
 
-from localstack.http import Request, Response, Router
-from localstack.http.dispatcher import handler_dispatcher
+from rolo import Request, Response, Router
+from rolo.dispatcher import handler_dispatcher
 
 
 class TestHandlerDispatcher:
@@ -14,7 +14,7 @@ class TestHandlerDispatcher:
         def handler_foo(_request: Request) -> Response:
             return Response("ok")
 
-        def handler_bar(_request: Request, bar, baz) -> Dict[str, any]:
+        def handler_bar(_request: Request, bar, baz) -> Response:
             response = Response()
             response.set_json({"bar": bar, "baz": baz})
             return response

@@ -12,7 +12,7 @@ import requests
 import websocket
 from werkzeug import Request, Response
 
-from localstack.http.asgi import ASGILifespanListener, WebSocketEnvironment
+from rolo.asgi import ASGILifespanListener, WebSocketEnvironment
 
 LOG = logging.getLogger(__name__)
 

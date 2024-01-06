@@ -5,12 +5,7 @@ import requests
 from werkzeug import Request, Response
 from werkzeug.datastructures import Headers
 
-from localstack.http.request import (
-    get_raw_base_url,
-    get_raw_current_url,
-    get_raw_path,
-    restore_payload,
-)
+from .request import get_raw_base_url, get_raw_current_url, get_raw_path, restore_payload
 
 
 class HttpClient(abc.ABC):

@@ -21,7 +21,7 @@ from typing import (
 from werkzeug import Request, Response
 from werkzeug.routing import BaseConverter, Map, Rule, RuleFactory
 
-from localstack.http.request import get_raw_path
+from .request import get_raw_path
 
 HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE")
 

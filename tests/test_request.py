@@ -3,7 +3,7 @@ import wsgiref.validate
 import pytest
 from werkzeug.exceptions import BadRequest
 
-from localstack.http.request import Request, dummy_wsgi_environment, get_raw_path
+from rolo.request import Request, dummy_wsgi_environment, get_raw_path
 
 
 def test_get_json():

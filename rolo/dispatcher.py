@@ -1,9 +1,7 @@
 import json
-from typing import Any, Dict, Protocol, Union
+from typing import Any, Dict, Protocol, Type, Union
 
 from werkzeug import Response as WerkzeugResponse
-
-from localstack.utils.json import CustomEncoder
 
 from .request import Request
 from .response import Response
@@ -17,14 +15,16 @@ ResultValue = Union[
 ]
 
 
-def _populate_response(response: WerkzeugResponse, result: ResultValue):
+def _populate_response(
+    response: WerkzeugResponse, result: ResultValue, json_encoder: Type[json.JSONEncoder]
+):
     if result is None:
         return response
 
     elif isinstance(result, (str, bytes, bytearray)):
         response.data = result
     elif isinstance(result, dict):
-        response.data = json.dumps(result, cls=CustomEncoder)
+        response.data = json.dumps(result, cls=json_encoder)
         response.mimetype = "application/json"
     else:
         raise ValueError("unhandled result type %s", type(result))
@@ -59,10 +59,11 @@ class Handler(Protocol):
         raise NotImplementedError
 
 
-def handler_dispatcher() -> Dispatcher[Handler]:
+def handler_dispatcher(json_encoder: Type[json.JSONEncoder] = None) -> Dispatcher[Handler]:
     """
     Creates a Dispatcher that treats endpoints like callables of the ``Handler`` Protocol.
 
+    :param json_encoder: optionally the json encoder class to use for translating responses
     :return: a new dispatcher
     """
 
@@ -72,7 +73,7 @@ def handler_dispatcher() -> Dispatcher[Handler]:
             return result
         response = Response()
         if result is not None:
-            _populate_response(response, result)
+            _populate_response(response, result, json_encoder)
         return response
 
     return _dispatch

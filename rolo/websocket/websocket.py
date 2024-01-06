@@ -7,7 +7,7 @@ from werkzeug.datastructures import EnvironHeaders, Headers
 from werkzeug.sansio.request import Request as _SansIORequest
 from werkzeug.wsgi import _get_server
 
-from .asgi import ASGIWebSocket, WebSocketEnvironment, WebSocketListener
+from rolo.asgi import ASGIWebSocket, WebSocketEnvironment, WebSocketListener
 
 
 class WebSocketError(IOError):

@@ -7,9 +7,8 @@ import werkzeug
 from werkzeug.exceptions import MethodNotAllowed, NotFound
 from werkzeug.routing import RequestRedirect
 
-from localstack.http import Request, Response, Router
-from localstack.http.router import E, RequestArguments, route
-from localstack.utils.common import get_free_tcp_port
+from rolo import Request, Response, Router
+from rolo.router import E, RequestArguments, route
 
 
 def noop(*args, **kwargs):
@@ -474,10 +473,9 @@ class TestWsgiIntegration:
             return router.dispatch(request)
 
         host = "localhost"
-        port = get_free_tcp_port()
+        server = werkzeug.serving.make_server(host, 0, app=app, threaded=True)
+        port = server.port
         url = f"http://{host}:{port}"
-
-        server = werkzeug.serving.make_server(host, port, app=app, threaded=True)
         t = threading.Thread(target=server.serve_forever)
         t.start()
 

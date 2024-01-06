@@ -1,8 +1,8 @@
 import pytest
 from werkzeug.exceptions import MethodNotAllowed
 
-from localstack.http import Request, Resource, Response, Router, resource
-from localstack.http.dispatcher import handler_dispatcher
+from rolo import Request, Resource, Response, Router, resource
+from rolo.dispatcher import handler_dispatcher
 
 
 class TestResource:

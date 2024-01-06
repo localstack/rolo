@@ -6,8 +6,8 @@ import pytest
 import websocket
 from werkzeug.datastructures import Headers
 
-from localstack.http import Router
-from localstack.http.websocket import (
+from rolo import Router
+from rolo.websocket.websocket import (
     WebSocketDisconnectedError,
     WebSocketProtocolError,
     WebSocketRequest,
