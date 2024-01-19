@@ -14,6 +14,9 @@ from werkzeug import serving
 from rolo import Router
 from rolo.asgi import ASGIAdapter, ASGILifespanListener, WebSocketListener
 from rolo.dispatcher import handler_dispatcher
+from rolo.gateway import Gateway
+from rolo.gateway.asgi import AsgiGateway
+from rolo.gateway.wsgi import WsgiGateway
 
 if typing.TYPE_CHECKING:
     from hypercorn.typing import ASGIFramework
@@ -102,6 +105,10 @@ def serve_asgi_app():
                 return
             asyncio.run_coroutine_threadsafe(_set_close(), event_loop)
             closed.wait(timeout=10)
+            try:
+                app.close()
+            except AttributeError:
+                pass
             asyncio.run_coroutine_threadsafe(event_loop.shutdown_asyncgens(), event_loop)
             event_loop.shutdown_default_executor()
             event_loop.stop()
@@ -112,7 +119,6 @@ def serve_asgi_app():
             target=_run, name=threading._newname("asgi-server-%d"), daemon=True
         ).start()
 
-        # TODO wait for server
         srv = _ServerInfo(host, port, f"http://{host}:{port}")
         srv.shutdown = _shutdown
 
@@ -147,6 +153,23 @@ def serve_asgi_adapter(serve_asgi_app):
         )
 
     yield _create
+
+
+@pytest.fixture
+def serve_wsgi_gateway(serve_wsgi_app):
+    def _serve(gateway: Gateway) -> Server:
+        return serve_wsgi_app(WsgiGateway(gateway))
+
+    return _serve
+
+
+@pytest.fixture
+def serve_asgi_gateway(serve_asgi_app):
+    def _serve(gateway: Gateway) -> Server:
+        loop = asyncio.new_event_loop()
+        return serve_asgi_app(AsgiGateway(gateway, event_loop=loop), event_loop=loop)
+
+    return _serve
 
 
 def is_server_up(srv: Server):
