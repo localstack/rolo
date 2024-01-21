@@ -1,4 +1,5 @@
 import logging
+import typing as t
 
 from ..request import Request
 from ..response import Response
@@ -24,12 +25,14 @@ class Gateway:
         response_handlers: list[Handler] = None,
         finalizers: list[Handler] = None,
         exception_handlers: list[ExceptionHandler] = None,
+        context_class: t.Type[RequestContext] = None,
     ) -> None:
         super().__init__()
         self.request_handlers = request_handlers if request_handlers is not None else []
         self.response_handlers = response_handlers if response_handlers is not None else []
         self.exception_handlers = exception_handlers if exception_handlers is not None else []
         self.finalizers = finalizers if finalizers is not None else []
+        self.context_class = context_class or RequestContext
 
     def new_chain(self) -> HandlerChain:
         return HandlerChain(
@@ -42,8 +45,7 @@ class Gateway:
     def process(self, request: Request, response: Response):
         chain = self.new_chain()
 
-        context = RequestContext()
-        context.request = request
+        context = self.context_class(request)
 
         chain.handle(context, response)
 

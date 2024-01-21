@@ -22,6 +22,9 @@ class RequestContext:
 
     request: Request
 
+    def __init__(self, request: Request = None):
+        self.request = request
+
     def __setattr__(self, key, value):
         self.__dict__[key] = value
 
