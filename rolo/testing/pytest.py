@@ -174,7 +174,7 @@ def serve_asgi_gateway(serve_asgi_app):
 
 def is_server_up(srv: Server):
     args = socket.getaddrinfo(srv.host, srv.port, socket.AF_INET, socket.SOCK_STREAM)
-    for family, socktype, proto, canonname, sockaddr in args:
+    for family, socktype, proto, _canonname, sockaddr in args:
         s = socket.socket(family, socktype, proto)
         try:
             s.connect(sockaddr)

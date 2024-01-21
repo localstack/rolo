@@ -138,7 +138,8 @@ class _AsyncGeneratorWrapper:
         try:
             return next(self.it)
         except StopIteration:
-            raise StopAsyncIteration
+            pass
+        raise StopAsyncIteration
 
     def __aiter__(self):
         return self

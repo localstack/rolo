@@ -27,6 +27,6 @@ def test_set_and_get_data():
     context = RequestContext()
 
     context.some_data = "foo"
-    assert context.get("some_data") is "foo"
+    assert context.get("some_data") == "foo"
     context.some_data = "bar"
-    assert context.get("some_data") is "bar"
+    assert context.get("some_data") == "bar"
