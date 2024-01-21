@@ -5,7 +5,20 @@ line_length = 100
 include = '((rolo)/.*\.py$|tests/.*\.py$)'
 #extend_exclude = '()'
 
-[tool.isort]
-profile = 'black'
-#extend_skip = []
-line_length = 100
+[tool.ruff]
+# Always generate Python 3.10-compatible code.
+target-version = "py310"
+line-length = 110
+select = ["B", "C", "E", "F", "I", "W", "T", "B9"]
+ignore = [
+    "E501", # E501 Line too long - handled by black, see https://docs.astral.sh/ruff/faq/#is-ruff-compatible-with-black
+]
+exclude = [
+    ".venv*",
+    "venv*",
+    "dist",
+    "build",
+    "target",
+    "*.egg-info",
+    ".git",
+    ]

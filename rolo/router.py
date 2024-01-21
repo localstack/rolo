@@ -250,7 +250,7 @@ class Router(Generic[E]):
         """
         rules = self._add_rules(RuleAdapter(*args, **kwargs))
 
-        if "path" in kwargs or type(args[0]) is str:
+        if "path" in kwargs or isinstance(args[0], str):
             return rules[0]
 
         return rules
@@ -469,7 +469,7 @@ class RuleAdapter(RuleFactory):
         """
         Dispatcher for overloaded ``__init__`` methods.
         """
-        if "path" in kwargs or type(args[0]) is str:
+        if "path" in kwargs or isinstance(args[0], str):
             self.factory = _EndpointRule(*args, **kwargs)
         elif "fn" in kwargs or callable(args[0]):
             self.factory = _EndpointFunction(*args, **kwargs)

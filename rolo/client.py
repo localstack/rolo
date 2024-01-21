@@ -13,6 +13,7 @@ class HttpClient(abc.ABC):
     An HTTP client that can make http requests using werkzeug's request object.
     """
 
+    @abc.abstractmethod
     def request(self, request: Request, server: str | None = None) -> Response:
         """
         Make the given HTTP as a client.
@@ -23,6 +24,7 @@ class HttpClient(abc.ABC):
         """
         raise NotImplementedError
 
+    @abc.abstractmethod
     def close(self):
         """
         Close any underlying resources the client may need.
@@ -100,7 +102,7 @@ class SimpleRequestsClient(HttpClient):
             # use raw base url to preserve path url encoding
             url=url,
             # request.args are only the url parameters
-            params=[(k, v) for k, v in request.args.items(multi=True)],
+            params=list(request.args.items(multi=True)),
             headers=headers,
             data=restore_payload(request),
             stream=True,

@@ -20,7 +20,10 @@ clean:
 	rm -rf *.egg-info/
 
 format:
-	$(VENV_RUN); python -m isort .; python -m black .
+	$(VENV_RUN); python -m ruff check --show-source --fix .; python -m black .
+
+lint:
+	$(VENV_RUN); python -m ruff check --show-source . && python -m black --check .
 
 test: venv
 	$(VENV_RUN); python -m pytest
