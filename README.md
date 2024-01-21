@@ -51,6 +51,39 @@ app = Request.application(router.dispatch)
 run_simple('localhost', 8080, app, use_reloader=True)
 ```
 
+### Gateway & Handler Chain
+
+A rolo `Gateway` holds a set of request, response, and exception handlers, as well as request finalizers.
+Gateway instances can then be served as WSGI or ASGI applications by using the appropriate serving adapter.
+Here is a simple example of a Gateway with just one handler that returns the URL and method that was invoked.
+
+```python
+from werkzeug import run_simple
+
+from rolo import Response
+from rolo.gateway import Gateway, HandlerChain, RequestContext
+from rolo.gateway.wsgi import WsgiGateway
+
+
+def echo_handler(chain: HandlerChain, context: RequestContext, response: Response):
+    response.status_code = 200
+    response.set_json({"url": context.request.url, "method": context.request.method})
+
+
+gateway = Gateway(request_handlers=[echo_handler])
+
+app = WsgiGateway(gateway)
+run_simple("localhost", 8080, app, use_reloader=True)
+```
+
+Serving this will yield:
+
+```console
+curl http://localhost:8080/hello-world
+{"url": "http://localhost:8080/hello-world", "method": "GET"}
+```
+
+
 ## Develop
 
 ### Quickstart
