@@ -1,4 +1,56 @@
-# project configuration
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rolo"
+authors = [
+    { name = "LocalStack Contributors", email = "info@localstack.cloud" }
+]
+version = "0.3.0dev"
+description = "A Python framework for building HTTP-based server applications"
+dependencies = [
+    "requests>=2.20",
+    "werkzeug>=3.0"
+]
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries"
+]
+dynamic = ["readme"]
+
+
+[project.optional-dependencies]
+dev = [
+    "black>=22.1",
+    "pytest>=7.0",
+    "hypercorn",
+    "pytest_httpserver",
+    "websocket-client>=1.7.0",
+    "coverage[toml]>=5.0.0",
+    "ruff==0.1.0"
+]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.dynamic]
+readme = {file = ["README.md"], content-type = "text/markdown"}
+
+[tool.setuptools.packages.find]
+include = ["rolo*"]
+exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md"]
 
 [tool.black]
 line_length = 100
