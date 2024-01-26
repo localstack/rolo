@@ -147,6 +147,21 @@ def _clone_map_without_rules(old: Map) -> Map:
     )
 
 
+def _clone_map_with_rules(old: Map) -> Map:
+    """
+    Creates a new copy of the existing map, with fresh unbound copies of all its containing rules.
+
+    :param old: the map to copy
+    :return: a new instance of the map
+    """
+    new = _clone_map_without_rules(old)
+
+    for old_rule in old.iter_rules():
+        new.add(old_rule.empty())
+
+    return new
+
+
 class Router(Generic[E]):
     """
     A Router is a wrapper around werkzeug's routing Map, that adds convenience methods and additional dispatching
@@ -262,28 +277,38 @@ class Router(Generic[E]):
         :param rule_factory: the rule to add
         """
         with self._mutex:
+            new = _clone_map_with_rules(self.url_map)
+
+            # instantiate, modify, and collect rules
             rules = []
-            for rule in rule_factory.get_rules(self.url_map):
+            for rule in rule_factory.get_rules(new):
                 rules.append(rule)
 
-                if rule.host is None and self.url_map.host_matching:
+                if rule.host is None and new.host_matching:
                     # this creates a "match any" rule, and will put the value of the host
                     # into the variable "__host__"
                     rule.host = "<__host__>"
 
-                self.url_map.add(rule)
+            for rule in rules:
+                new.add(rule)
+
+            self.url_map = new
 
             return rules
 
     def add_rule(self, rule: RuleFactory):
         """
-        Thread safe version of Werkzeug's ``Map.add``. This can be used as low-level method to pass a rule directly to
-        the Werkzeug URL map without any manipulation or manual creation of the rule, which ``add`` does.
+        Thread safe version of Werkzeug's ``Map.add``. This can be used as low-level method to pass a rule directly
+        to the Werkzeug URL map without any manipulation or manual creation of the rule, which ``add`` does. Like
+        ``remove``, the method actually clones and replaces the underlying URL Map, to guarantee thread safety with
+        ``dispatch``. Adding rules is therefore a relatively expensive operation.
 
         :param rule: the rule to add
         """
         with self._mutex:
-            self.url_map.add(rule)
+            new = _clone_map_with_rules(self.url_map)
+            new.add(rule)
+            self.url_map = new
 
     def remove(self, rules: Union[Rule, Iterable[Rule]]):
         """
