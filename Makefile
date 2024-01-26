@@ -15,6 +15,7 @@ $(VENV_ACTIVATE): pyproject.toml
 install: venv
 
 clean:
+	rm -rf .venv
 	rm -rf build/
 	rm -rf .eggs/
 	rm -rf *.egg-info/
