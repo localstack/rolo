@@ -7,7 +7,7 @@ import websocket
 from _pytest.fixtures import SubRequest
 from werkzeug.datastructures import Headers
 
-from rolo import Router
+from rolo import Response, Router
 from rolo.websocket.request import (
     WebSocketDisconnectedError,
     WebSocketProtocolError,
@@ -103,6 +103,21 @@ def test_websocket_headers(serve_websocket_listener):
     assert headers["Authorization"] == "Basic let-me-in"
 
 
+def test_websocket_reject(serve_websocket_listener):
+    @WebSocketRequest.listener
+    def respond(request: WebSocketRequest):
+        request.reject(Response("nope", 403))
+
+    server = serve_websocket_listener(respond)
+
+    socket = websocket.WebSocket()
+    with pytest.raises(websocket.WebSocketBadStatusException) as e:
+        socket.connect(server.url.replace("http://", "ws://"))
+
+    assert e.value.status_code == 403
+    assert e.value.resp_body == b"nope"
+
+
 def test_binary_and_text_mode(serve_websocket_listener):
     received = Queue()
 
@@ -152,7 +167,7 @@ def test_send_non_confirming_data(serve_websocket_listener):
     assert e.match("Cannot send data type <class 'dict'> over websocket")
 
 
-def test_router_integration(serve_asgi_adapter):
+def test_router_integration(serve_websocket_listener):
     router = Router()
 
     def _handler(request: WebSocketRequest, request_args: dict):
@@ -162,10 +177,7 @@ def test_router_integration(serve_asgi_adapter):
 
     router.add("/foo/<id>", _handler)
 
-    server = serve_asgi_adapter(
-        wsgi_app=None,
-        websocket_listener=WebSocketRequest.listener(router.dispatch),
-    )
+    server = serve_websocket_listener(WebSocketRequest.listener(router.dispatch))
     client = websocket.WebSocket()
     client.connect(server.url.replace("http://", "ws://") + "/foo/bar")
     assert client.recv() == "foo"
