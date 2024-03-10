@@ -7,30 +7,16 @@ from werkzeug.datastructures import EnvironHeaders, Headers
 from werkzeug.sansio.request import Request as _SansIORequest
 from werkzeug.wsgi import _get_server
 
-from rolo.asgi import ASGIWebSocket, WebSocketEnvironment, WebSocketListener
-
-
-class WebSocketError(IOError):
-    """Base class for websocket errors"""
-
-    pass
-
-
-class WebSocketDisconnectedError(WebSocketError):
-    """Raised when the client has disconnected while the server is still trying to receive data."""
-
-    default_code = 1005
-    """https://asgi.readthedocs.io/en/latest/specs/www.html#disconnect-receive-event-ws"""
-
-    def __init__(self, code: int = None):
-        self.code = code if code is not None else self.default_code
-        super().__init__(f"Websocket disconnected code={self.code}")
-
-
-class WebSocketProtocolError(WebSocketError):
-    """Raised if there is a problem in the interaction between app and the websocket server."""
-
-    pass
+from .adapter import (
+    BytesMessage,
+    CreateConnection,
+    Message,
+    TextMessage,
+    WebSocketAdapter,
+    WebSocketEnvironment,
+    WebSocketListener,
+)
+from .errors import WebSocketDisconnectedError, WebSocketProtocolError
 
 
 class WebSocket:
@@ -40,9 +26,9 @@ class WebSocket:
     """
 
     request: "WebSocketRequest"
-    socket: ASGIWebSocket
+    socket: WebSocketAdapter
 
-    def __init__(self, request: "WebSocketRequest", socket: ASGIWebSocket):
+    def __init__(self, request: "WebSocketRequest", socket: WebSocketAdapter):
         self.request = request
         self.socket = socket
 
@@ -70,28 +56,14 @@ class WebSocket:
             raise ValueError("text_or_bytes cannot be None")
 
         if isinstance(text_or_bytes, str):
-            self.socket.send(
-                {
-                    "type": "websocket.send",
-                    "bytes": None,
-                    "text": text_or_bytes,
-                },
-                timeout=timeout,
-            )
+            event = TextMessage(text_or_bytes)
+        elif isinstance(text_or_bytes, bytes):
+            event = BytesMessage(text_or_bytes)
         else:
-            try:
-                self.socket.send(
-                    {
-                        "type": "websocket.send",
-                        "bytes": text_or_bytes,
-                        "text": None,
-                    },
-                    timeout=timeout,
-                )
-            except TypeError as e:
-                raise WebSocketProtocolError(
-                    f"Cannot send data type {type(text_or_bytes)} over websocket"
-                ) from e
+            raise WebSocketProtocolError(
+                f"Cannot send data type {type(text_or_bytes)} over websocket"
+            )
+        self.socket.send(event, timeout)
 
     def receive(self) -> str | bytes:
         """
@@ -103,22 +75,15 @@ class WebSocket:
         :return: the next data package from the websocket
         """
         event = self.socket.receive()
-        if event["type"] == "websocket.receive":
-            text = event.get("text")
-            if text is not None:
-                return text
-
-            buf = event.get("bytes")
-            if buf is not None:
-                return buf
-
-            raise WebSocketProtocolError(
-                "Both bytes and text are None in the websocket.receive event."
-            )
-        elif event["type"] == "websocket.disconnect":
-            raise WebSocketDisconnectedError(event.get("code"))
+        if isinstance(event, Message):
+            data = event.data
+            if data is None:
+                raise WebSocketProtocolError("No data returned by the websocket.")
+            return data
         else:
-            raise WebSocketProtocolError(f"Unexpected websocket event type {event['type']}.")
+            raise WebSocketProtocolError(
+                f"Unexpected websocket event type {event.__class__.__name__}."
+            )
 
     def close(self, code: int = 1000, reason: t.Optional[str] = None, timeout: float = None):
         """
@@ -128,16 +93,7 @@ class WebSocket:
         :param reason: optional reason
         :param timeout: connection timeout
         """
-        # if the underlying hypercorn websocket connection has already been closed, this event is ignored,
-        # so it's safe to always call
-        self.socket.send(
-            {
-                "type": "websocket.close",
-                "code": code,
-                "reason": reason,
-            },
-            timeout=timeout,
-        )
+        self.socket.close(code, reason, timeout)
 
 
 class WebSocketRequest(_SansIORequest):
@@ -178,14 +134,14 @@ class WebSocketRequest(_SansIORequest):
         self._rejected = False
 
     @property
-    def socket(self) -> ASGIWebSocket:
+    def socket(self) -> WebSocketAdapter:
         """
-        Returns the underlying ASGIWebSocket from the environment. This is analogous to ``Request.stream``
+        Returns the underlying WebSocketAdapter from the environment. This is analogous to ``Request.stream``
         in the default werkzeug HTTP request object.
 
-        :return: the ASGIWebSocket from the environment
+        :return: the WebSocketAdapter from the environment
         """
-        return self.environ["asgi.websocket"]
+        return self.environ.get("rolo.websocket") or self.environ.get("asgi.websocket")
 
     def is_upgraded(self) -> bool:
         """Returns true if ``accept`` was called."""
@@ -209,7 +165,7 @@ class WebSocketRequest(_SansIORequest):
 
         self.socket.respond(
             response.status_code,
-            response.headers.to_wsgi_list(),
+            response.headers,
             response.iter_encoded(),
         )
         self._rejected = True
@@ -251,34 +207,12 @@ class WebSocketRequest(_SansIORequest):
             raise ValueError("Websocket connection already rejected")
 
         event = self.socket.receive(timeout)
-        if event["type"] == "websocket.connect":
-            if headers:
-                asgi_headers = [
-                    (k.encode("latin1"), v.encode("latin1")) for k, v in headers.items()
-                ]
-            else:
-                asgi_headers = []
-
-            self.socket.send(
-                {
-                    "type": "websocket.accept",
-                    "subprotocol": subprotocol,
-                    "headers": asgi_headers,
-                },
-                timeout=timeout,
-            )
+        if isinstance(event, CreateConnection):
+            self.socket.accept(subprotocol, [], headers, timeout)
             self._upgraded = True
             return WebSocket(self, self.socket)
-
         else:
-            self.socket.send(
-                {
-                    "type": "websocket.close",
-                    "code": 1003,
-                    "reason": f"Unexpected event {event['type']}",
-                },
-                timeout,
-            )
+            self.socket.close(1003, f"Unexpected event {event.__class__.__name__}")
             raise WebSocketProtocolError(f"Unexpected event {event}")
 
     def close(self):
@@ -286,18 +220,11 @@ class WebSocketRequest(_SansIORequest):
         Explicitly close the websocket. If this is called after ``reject(...)`` or ``accept(...)`` has been
         called, this will have no effect. Calling ``reject`` inherently closes the websocket connection
         since it immediately returns an HTTP response. After calling ``accept`` you should call
-        Websocket.close instead.
+        ``WebSocket.close`` instead.
         """
         if self._rejected or self._upgraded:
             return
-
-        self.socket.send(
-            {
-                "type": "websocket.close",
-                "code": 1000,
-                "reason": None,
-            },
-        )
+        self.socket.close(1000)
 
     @classmethod
     def listener(cls, fn: t.Callable[["WebSocketRequest"], None]) -> WebSocketListener:

@@ -12,11 +12,12 @@ from werkzeug import Request as WerkzeugRequest
 from werkzeug import serving
 
 from rolo import Router
-from rolo.asgi import ASGIAdapter, ASGILifespanListener, WebSocketListener
+from rolo.asgi import ASGIAdapter, ASGILifespanListener
 from rolo.dispatcher import handler_dispatcher
 from rolo.gateway import Gateway
 from rolo.gateway.asgi import AsgiGateway
 from rolo.gateway.wsgi import WsgiGateway
+from rolo.websocket.adapter import WebSocketListener
 
 if typing.TYPE_CHECKING:
     from hypercorn.typing import ASGIFramework

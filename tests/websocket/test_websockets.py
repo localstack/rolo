@@ -7,7 +7,7 @@ import websocket
 from werkzeug.datastructures import Headers
 
 from rolo import Router
-from rolo.websocket.websocket import (
+from rolo.websocket.request import (
     WebSocketDisconnectedError,
     WebSocketProtocolError,
     WebSocketRequest,

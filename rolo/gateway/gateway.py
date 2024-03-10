@@ -3,7 +3,7 @@ import typing as t
 
 from ..request import Request
 from ..response import Response
-from ..websocket.websocket import WebSocketRequest
+from ..websocket.request import WebSocketRequest
 from .chain import ExceptionHandler, Handler, HandlerChain, RequestContext
 
 LOG = logging.getLogger(__name__)
