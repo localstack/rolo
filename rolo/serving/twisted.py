@@ -1,8 +1,5 @@
 """
-Bindings to serve LocalStack using ``twisted.web``.
-
-TODO: both header retaining and TLS multiplexing are implemented in a pretty hacky way.
-TODO: websocket support
+Bindings to serve rolo through Twisted.
 """
 import logging
 import typing as t
