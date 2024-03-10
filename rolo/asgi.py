@@ -9,6 +9,16 @@ from concurrent.futures import Executor
 from io import BufferedReader, RawIOBase
 from urllib.parse import quote, unquote, urlparse
 
+from werkzeug.datastructures import Headers
+
+from rolo.websocket import (
+    WebSocketDisconnectedError,
+    WebSocketEnvironment,
+    WebSocketListener,
+    WebSocketProtocolError,
+)
+from rolo.websocket import adapter as rolows
+
 if t.TYPE_CHECKING:
     from _typeshed import WSGIApplication, WSGIEnvironment
     from hypercorn.typing import (
@@ -42,9 +52,6 @@ if t.TYPE_CHECKING:
     ]
 
 LOG = logging.getLogger(__name__)
-
-WebSocketEnvironment: t.TypeAlias = t.Dict[str, t.Any]
-"""Special WSGIEnvironment that has an `asgi.websocket` key that stores a `Websocket` instance."""
 
 
 def populate_wsgi_environment(
@@ -327,12 +334,9 @@ class ASGILifespanListener:
         pass
 
 
-class ASGIWebSocket:
+class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
     """
-    A wrapper around an ASGI ``WebsocketScope`` and relevant IO objects that can be used to interact with the websocket
-    in synchronous code.
-
-    For send and receive event formats, see https://asgi.readthedocs.io/en/latest/specs/www.html#websocket.
+    Adapter code to serve a ``rolo.websocket.WebSocketRequest`` through ASGI.
     """
 
     _scope: "WebsocketScope"
@@ -351,13 +355,13 @@ class ASGIWebSocket:
         self._send = send
         self._loop = loop
 
-    async def send_async(self, event: "_WebsocketResponse"):
+    async def asgi_send_async(self, event: "_WebsocketResponse"):
         await self._send(event)
 
-    async def receive_async(self) -> "_WebsocketRequest":
+    async def asgi_receive_async(self) -> "_WebsocketRequest":
         return await self._receive()
 
-    def send(self, event: "_WebsocketResponse", timeout: float = None) -> None:
+    def asgi_send(self, event: "_WebsocketResponse", timeout: float = None) -> None:
         """
         Sends an event to the Websocket. Events can be:
 
@@ -368,11 +372,11 @@ class ASGIWebSocket:
         :param event: The event to send
         :param timeout: The number of seconds to wait for the result of the async call
         """
-        return asyncio.run_coroutine_threadsafe(self.send_async(event), self._loop).result(
+        return asyncio.run_coroutine_threadsafe(self.asgi_send_async(event), self._loop).result(
             timeout=timeout
         )
 
-    def receive(self, timeout: float = None) -> "_WebsocketRequest":
+    def asgi_receive(self, timeout: float = None) -> "_WebsocketRequest":
         """
         Listens on the websocket and returns the next event. Events can be:
 
@@ -383,73 +387,117 @@ class ASGIWebSocket:
         :param timeout: The number of seconds to wait for the event
         :return: The received event
         """
-        return asyncio.run_coroutine_threadsafe(self.receive_async(), self._loop).result(timeout)
+        return asyncio.run_coroutine_threadsafe(self.asgi_receive_async(), self._loop).result(
+            timeout
+        )
+
+    def receive(self, timeout: float = None) -> rolows.CreateConnection | rolows.Message:
+        event = self.asgi_receive(timeout)
+
+        # user-facing events
+        if event["type"] == "websocket.connect":
+            return rolows.CreateConnection()
+
+        if event["type"] == "websocket.receive":
+            event: "WebsocketReceiveEvent"
+            text = event.get("text")
+            if text is not None:
+                return rolows.TextMessage(text)
+
+            buf: bytes = event.get("bytes")
+            if buf is not None:
+                return rolows.BytesMessage(buf)
+
+            raise WebSocketProtocolError(
+                "Both bytes and text are None in the websocket.receive event."
+            )
+
+        # internal events
+        if event["type"] == "websocket.disconnect":
+            event: "WebsocketDisconnectEvent"
+            raise WebSocketDisconnectedError(event["code"])
+
+    def send(self, event: rolows.Message, timeout: float = None):
+        if isinstance(event, rolows.TextMessage):
+            asgi_event = {
+                "type": "websocket.send",
+                "text": event.data,
+                "bytes": None,
+            }
+        elif isinstance(event, rolows.BytesMessage):
+            asgi_event = {
+                "type": "websocket.send",
+                "text": None,
+                "bytes": event.data,
+            }
+        else:
+            raise TypeError(f"Unknown message type {event.__class__.__name__}")
+
+        self.asgi_send(asgi_event, timeout=timeout)
 
     def respond(
-        self, status: int, headers: list[tuple[str, str]] = None, body: t.Iterable[bytes] = None
+        self,
+        status_code: int,
+        headers: Headers = None,
+        body: t.Iterable[bytes] = None,
+        timeout: float = None,
     ):
-        self.send(
+        self.asgi_send(
             {
                 "type": "websocket.http.response.start",
-                "status": status,
-                "headers": [(h[0].encode("latin1"), h[1].encode("latin1")) for h in headers],
-            }
+                "status": status_code,
+                "headers": self._to_asgi_headers(headers) if headers else [],
+            },
+            timeout=timeout,
         )
         if body:
             for chunk in body:
-                self.send(
+                self.asgi_send(
                     {
                         "type": "websocket.http.response.body",
                         "body": chunk,
                         "more_body": True,
-                    }
+                    },
+                    timeout=timeout,
                 )
-        self.send(
+        self.asgi_send(
             {
                 "type": "websocket.http.response.body",
                 "body": b"",
                 "more_body": False,
-            }
+            },
+            timeout=timeout,
         )
 
+    def accept(
+        self,
+        subprotocol: str = None,
+        extensions: list[str] = None,
+        extra_headers: Headers = None,
+        timeout: float = None,
+    ):
+        # TODO: how to deal with extensions on this level?
+        self.asgi_send(
+            {
+                "type": "websocket.accept",
+                "subprotocol": subprotocol,
+                "headers": self._to_asgi_headers(extra_headers) if extra_headers else [],
+            },
+            timeout=timeout,
+        )
 
-class WebSocketListener(t.Protocol):
-    """
-    Similar protocol to a WSGIApplication, only it expects a Websocket instead of a WSGIEnvironment.
-    """
+    def close(self, code: int = 1001, reason: str = None, timeout: float = None):
+        self.asgi_send(
+            {
+                "type": "websocket.close",
+                "code": code,
+                "reason": reason,
+            },
+            timeout=timeout,
+        )
 
-    def __call__(self, environ: WebSocketEnvironment):
-        """
-        Called when a new Websocket connection is established. To initiate the connection, you need to perform the
-        connect handshake yourself. First, receive the ``websocket.connect`` event, and then send the
-        ``websocket.accept`` event. Here's a minimal example::
-
-            def accept(self, environ: WebsocketEnvironment):
-                websocket = environ['asgi.websocket']
-                event = websocket.receive()
-                if event['type'] == "websocket.connect":
-                    websocket.send({
-                        "type": "websocket.accept",
-                        "subprotocol": None,
-                        "headers": [],
-                    })
-                else:
-                    websocket.send({
-                        "type": "websocket.close",
-                        "code": 1002, # protocol error
-                        "reason": None,
-                    })
-                    return
-
-                while True:
-                    event = websocket.receive()
-                    if event["type"] == "websocket.disconnect":
-                        return
-                    print(event)
-
-        :param environ: The new Websocket environment
-        """
-        raise NotImplementedError
+    def _to_asgi_headers(self, headers: Headers) -> t.List[t.Tuple[bytes, bytes]]:
+        return [(h[0].encode("latin1"), h[1].encode("latin1")) for h in headers.to_wsgi_list()]
 
 
 class ASGIAdapter:
@@ -578,7 +626,8 @@ class ASGIAdapter:
         environ: WebSocketEnvironment = {}
         populate_wsgi_environment(environ, scope)
         environ["REQUEST_METHOD"] = "WEBSOCKET"
-        environ["asgi.websocket"] = ASGIWebSocket(scope, receive, send, self.event_loop)
+        environ["rolo.websocket"] = ASGIWebSocketAdapter(scope, receive, send, self.event_loop)
+        environ["asgi.websocket"] = environ["rolo.websocket"]
         return environ
 
     async def handle_websocket(

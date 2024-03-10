@@ -3,7 +3,7 @@ import websocket
 from rolo import Router, route
 from rolo.gateway import Gateway
 from rolo.gateway.handlers import RouterHandler
-from rolo.websocket.websocket import WebSocketRequest
+from rolo.websocket.request import WebSocketRequest
 
 
 def test_gateway_router_websocket_integration(serve_asgi_gateway):

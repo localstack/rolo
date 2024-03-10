@@ -4,7 +4,7 @@ from asyncio import AbstractEventLoop
 from typing import Optional
 
 from rolo.asgi import ASGIAdapter, ASGILifespanListener
-from rolo.websocket.websocket import WebSocketRequest
+from rolo.websocket.request import WebSocketRequest
 
 from .gateway import Gateway
 from .wsgi import WsgiGateway

@@ -12,7 +12,7 @@ import requests
 import websocket
 from werkzeug import Request, Response
 
-from rolo.asgi import ASGILifespanListener, WebSocketEnvironment
+from rolo.asgi import ASGILifespanListener, ASGIWebSocketAdapter, WebSocketEnvironment
 
 LOG = logging.getLogger(__name__)
 
@@ -408,10 +408,10 @@ def test_lifespan_listener(serve_asgi_adapter):
 def test_websocket_listener(serve_asgi_adapter):
     class WebsocketApp:
         def __call__(self, environ: WebSocketEnvironment):
-            ws = environ["asgi.websocket"]
-            event = ws.receive()
+            ws: ASGIWebSocketAdapter = environ["asgi.websocket"]
+            event = ws.asgi_receive()
             assert event["type"] == "websocket.connect"
-            ws.send(
+            ws.asgi_send(
                 {
                     "type": "websocket.accept",
                     "subprotocol": None,
@@ -419,17 +419,17 @@ def test_websocket_listener(serve_asgi_adapter):
                 }
             )
 
-            event = ws.receive()
+            event = ws.asgi_receive()
             assert event == {"type": "websocket.receive", "text": "hello world", "bytes": None}
 
-            ws.send(
+            ws.asgi_send(
                 {
                     "type": "websocket.send",
                     "text": f"echo: {event['text']}",
                 }
             )
 
-            ws.send({"type": "websocket.close", "code": 1000, "reason": "test done"})
+            ws.asgi_send({"type": "websocket.close", "code": 1000, "reason": "test done"})
 
     server = serve_asgi_adapter(None, websocket_listener=WebsocketApp())
 
