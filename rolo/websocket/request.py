@@ -230,7 +230,7 @@ class WebSocketRequest(_SansIORequest):
     def listener(cls, fn: t.Callable[["WebSocketRequest"], None]) -> WebSocketListener:
         """
         Convenience function inspired by ``werkzeug.Request.application`` that transforms a function into a
-        ``WebsocketListener`` for the use in an ``ASGIAdapter``. Example::
+        ``WebsocketListener`` for the use in server code that support ``WebsocketListeners``. Example::
 
             @WebsocketRequest.listener
             def app(request: WebSocketRequest):

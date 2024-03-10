@@ -1,4 +1,4 @@
-"""Adapter API between high-level rolo.websocket.request and an underlying IO framework like ASGI or
+"""Adapter API between high-level rolo.websocket.request and an underlying IO frameworks like ASGI or
 twisted."""
 import dataclasses
 import typing as t
@@ -10,6 +10,8 @@ WebSocketEnvironment: t.TypeAlias = t.Dict[str, t.Any]
 
 
 class Event:
+    """A websocket event (subset of wsproto.events)"""
+
     pass
 
 
@@ -30,6 +32,11 @@ class BytesMessage(Message):
 
 @dataclasses.dataclass
 class CreateConnection(Event):
+    """
+    This indicates the first event of the websocket after a connection upgrade. For example, in wsproto
+    this corresponds to a ``Request`` event, or ``websocket.connect`` event in ASGI.
+    """
+
     pass
 
 
@@ -93,32 +100,27 @@ class WebSocketListener(t.Protocol):
 
     def __call__(self, environ: WebSocketEnvironment):
         """
-        Called when a new Websocket connection is established. To initiate the connection, you need to perform the
-        connect handshake yourself. First, receive the ``websocket.connect`` event, and then send the
+        Called when a new Websocket connection is established. To initiate the connection, you need to perform
+        the connect handshake yourself. First, receive the ``websocket.connect`` event, and then send the
         ``websocket.accept`` event. Here's a minimal example::
 
             def accept(self, environ: WebsocketEnvironment):
-                websocket = environ['rolo.websocket']
+                websocket: WebSocketAdapter = environ['rolo.websocket']
                 event = websocket.receive()
-                if event['type'] == "websocket.connect":
-                    websocket.send({
-                        "type": "websocket.accept",
-                        "subprotocol": None,
-                        "headers": [],
-                    })
+                if isinstance(event, CreateConnection):
+                    websocket.accept()
                 else:
-                    websocket.send({
-                        "type": "websocket.close",
-                        "code": 1002, # protocol error
-                        "reason": None,
-                    })
+                    websocket.close(1002)  # protocol error
                     return
 
                 while True:
                     event = websocket.receive()
-                    if event["type"] == "websocket.disconnect":
-                        return
+                    if isinstance(event, CloseConnection):
+                            return
                     print(event)
+
+        In reality, you wouldn't be using the websocket adapter directly, the server would probably create a
+        ``rolo.websocket.WebSocketRequest`` and serve it accordingly through a ``Gateway``.
 
         :param environ: The new Websocket environment
         """

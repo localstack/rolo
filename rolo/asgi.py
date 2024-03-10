@@ -11,16 +11,13 @@ from urllib.parse import quote, unquote, urlparse
 
 from werkzeug.datastructures import Headers
 
-from rolo.websocket.adapter import (
-    BytesMessage,
-    CreateConnection,
-    Message,
-    TextMessage,
-    WebSocketAdapter,
+from rolo.websocket import (
+    WebSocketDisconnectedError,
     WebSocketEnvironment,
     WebSocketListener,
+    WebSocketProtocolError,
 )
-from rolo.websocket.errors import WebSocketDisconnectedError, WebSocketProtocolError
+from rolo.websocket import adapter as rolows
 
 if t.TYPE_CHECKING:
     from _typeshed import WSGIApplication, WSGIEnvironment
@@ -337,7 +334,7 @@ class ASGILifespanListener:
         pass
 
 
-class ASGIWebSocketAdapter(WebSocketAdapter):
+class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
     """
     Adapter code to serve a ``rolo.websocket.WebSocketRequest`` through ASGI.
     """
@@ -394,22 +391,22 @@ class ASGIWebSocketAdapter(WebSocketAdapter):
             timeout
         )
 
-    def receive(self, timeout: float = None) -> CreateConnection | Message:
+    def receive(self, timeout: float = None) -> rolows.CreateConnection | rolows.Message:
         event = self.asgi_receive(timeout)
 
         # user-facing events
         if event["type"] == "websocket.connect":
-            return CreateConnection()
+            return rolows.CreateConnection()
 
         if event["type"] == "websocket.receive":
             event: "WebsocketReceiveEvent"
             text = event.get("text")
             if text is not None:
-                return TextMessage(text)
+                return rolows.TextMessage(text)
 
             buf: bytes = event.get("bytes")
             if buf is not None:
-                return BytesMessage(buf)
+                return rolows.BytesMessage(buf)
 
             raise WebSocketProtocolError(
                 "Both bytes and text are None in the websocket.receive event."
@@ -420,14 +417,14 @@ class ASGIWebSocketAdapter(WebSocketAdapter):
             event: "WebsocketDisconnectEvent"
             raise WebSocketDisconnectedError(event["code"])
 
-    def send(self, event: Message, timeout: float = None):
-        if isinstance(event, TextMessage):
+    def send(self, event: rolows.Message, timeout: float = None):
+        if isinstance(event, rolows.TextMessage):
             asgi_event = {
                 "type": "websocket.send",
                 "text": event.data,
                 "bytes": None,
             }
-        elif isinstance(event, BytesMessage):
+        elif isinstance(event, rolows.BytesMessage):
             asgi_event = {
                 "type": "websocket.send",
                 "text": None,
@@ -479,6 +476,7 @@ class ASGIWebSocketAdapter(WebSocketAdapter):
         extra_headers: Headers = None,
         timeout: float = None,
     ):
+        # TODO: how to deal with extensions on this level?
         self.asgi_send(
             {
                 "type": "websocket.accept",
