@@ -18,7 +18,7 @@ def _echo_handler(request: Request, args):
     )
 
 
-@pytest.mark.parametrize("serve_gateway", ["wsgi", "asgi"], indirect=True)
+@pytest.mark.parametrize("serve_gateway", ["wsgi", "asgi", "twisted"], indirect=True)
 class TestWerkzeugExceptionHandler:
     def test_json_output_format(self, serve_gateway):
         def handler(chain: HandlerChain, context: RequestContext, response: Response):
@@ -47,7 +47,7 @@ class TestWerkzeugExceptionHandler:
         assert resp.json() == {"code": 400, "description": "oh noes"}
 
 
-@pytest.mark.parametrize("serve_gateway", ["wsgi", "asgi"], indirect=True)
+@pytest.mark.parametrize("serve_gateway", ["wsgi", "asgi", "twisted"], indirect=True)
 class TestRouterHandler:
     def test_router_handler_with_respond_not_found(self, serve_gateway):
         router = Router()
@@ -71,7 +71,7 @@ class TestRouterHandler:
         assert response.text == "not found"
 
 
-@pytest.mark.parametrize("serve_gateway", ["wsgi", "asgi"], indirect=True)
+@pytest.mark.parametrize("serve_gateway", ["wsgi", "asgi", "twisted"], indirect=True)
 class TestEmptyResponseHandler:
     def test_empty_response_handler(self, serve_gateway):
         def _handler(chain, context, response):

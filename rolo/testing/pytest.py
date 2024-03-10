@@ -17,6 +17,7 @@ from rolo.dispatcher import handler_dispatcher
 from rolo.gateway import Gateway
 from rolo.gateway.asgi import AsgiGateway
 from rolo.gateway.wsgi import WsgiGateway
+from rolo.serving.twisted import TwistedGateway
 from rolo.websocket.adapter import WebSocketListener
 
 if typing.TYPE_CHECKING:
@@ -171,6 +172,72 @@ def serve_asgi_gateway(serve_asgi_app):
         return serve_asgi_app(AsgiGateway(gateway, event_loop=loop), event_loop=loop)
 
     return _serve
+
+
+@pytest.fixture(scope="session")
+def twisted_reactor():
+    """Session fixture that controls the lifecycle of the main twisted reactor."""
+    from twisted.internet import reactor
+    from twisted.internet.error import ReactorAlreadyRunning
+
+    def _run():
+        try:
+            reactor.run(installSignalHandlers=False)
+        except ReactorAlreadyRunning:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    yield reactor
+
+    reactor.stop()
+
+
+@pytest.fixture
+def serve_twisted_tcp_server(twisted_reactor):
+    """Factory ficture for serving a twisted protocol factory (like ``Site``) through the twisted reactor."""
+    from twisted.internet.tcp import Port
+
+    ports: list[Port] = []
+
+    def _create(protocol_factory):
+        port = get_random_tcp_port()
+        host = "localhost"
+        ports.append(twisted_reactor.listenTCP(port, protocol_factory))
+        return _ServerInfo(host, port, f"http://{host}:{port}")
+
+    yield _create
+
+    for _port in ports:
+        _port.stopListening()
+
+
+@pytest.fixture
+def serve_twisted_gateway(serve_twisted_tcp_server):
+    def _create(gateway):
+        return serve_twisted_tcp_server(TwistedGateway(gateway))
+
+    yield _create
+
+
+@pytest.fixture
+def serve_twisted_websocket_listener(twisted_reactor, serve_twisted_tcp_server):
+    from twisted.web.server import Site
+
+    from rolo.serving.twisted import HeaderPreservingWSGIResource, WebsocketResourceDecorator
+
+    def _create(websocket_listener: WebSocketListener):
+        site = Site(
+            WebsocketResourceDecorator(
+                original=HeaderPreservingWSGIResource(
+                    twisted_reactor, twisted_reactor.getThreadPool(), None
+                ),
+                websocketListener=websocket_listener,
+            )
+        )
+        return serve_twisted_tcp_server(site)
+
+    return _create
 
 
 def is_server_up(srv: Server):

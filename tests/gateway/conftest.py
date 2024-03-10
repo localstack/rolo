@@ -5,7 +5,7 @@ from rolo.testing.pytest import Server
 
 
 @pytest.fixture
-def serve_gateway(request, serve_wsgi_gateway, serve_asgi_gateway):
+def serve_gateway(request, serve_wsgi_gateway, serve_asgi_gateway, serve_twisted_gateway):
     def _serve(gateway: Gateway) -> Server:
         try:
             gw_type = request.param
@@ -14,6 +14,8 @@ def serve_gateway(request, serve_wsgi_gateway, serve_asgi_gateway):
 
         if gw_type == "asgi":
             return serve_asgi_gateway(gateway)
+        elif gw_type == "twisted":
+            return serve_twisted_gateway(gateway)
         else:
             return serve_wsgi_gateway(gateway)
 

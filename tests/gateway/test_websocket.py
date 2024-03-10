@@ -1,3 +1,4 @@
+import pytest
 import websocket
 
 from rolo import Router, route
@@ -6,7 +7,8 @@ from rolo.gateway.handlers import RouterHandler
 from rolo.websocket.request import WebSocketRequest
 
 
-def test_gateway_router_websocket_integration(serve_asgi_gateway):
+@pytest.mark.parametrize("serve_gateway", ["asgi", "twisted"], indirect=True)
+def test_gateway_router_websocket_integration(serve_gateway):
     @route("/ws", methods=["WEBSOCKET"])
     def _handler(request: WebSocketRequest, args):
         with request.accept() as ws:
@@ -16,7 +18,7 @@ def test_gateway_router_websocket_integration(serve_asgi_gateway):
     router = Router()
     router.add(_handler)
 
-    server = serve_asgi_gateway(Gateway(request_handlers=[RouterHandler(router)]))
+    server = serve_gateway(Gateway(request_handlers=[RouterHandler(router)]))
 
     client = websocket.WebSocket()
     client.connect(server.url.replace("http://", "ws://") + "/ws")
