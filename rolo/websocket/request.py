@@ -111,7 +111,7 @@ class WebSocketRequest(_SansIORequest):
     def __init__(self, environ: WebSocketEnvironment):
         """
         Creates a new request from the given WebSocketEnvironment. This is like a sans-IO WSGI Environment,
-        with an additional field ``asgi.websocket`` that contains an ``ASGIWebSocket`` interface.
+        with an additional field ``rolo.websocket`` that contains a ``WebSocketAdapter`` interface.
 
         :param environ: the WebSocketEnvironment
         """
@@ -191,8 +191,8 @@ class WebSocketRequest(_SansIORequest):
                     data = websocket.receive()
                     # ...
 
-        The handshake using the ASGI websocket works as followsL receive the ``websocket.connect`` event
-        from the websocket and then send the ``websocket.accept`` event. If the handshake failed because
+        The handshake using the WebSocketAdapter works as follows: receive the ``CreateConnection`` event
+        from the websocket and then call the ``socket.accept(...)``. If the handshake failed because
         the websocket sent an unexpected exception, the connection is closed and the method raises an error.
 
         :param subprotocol: The subprotocol the server wishes to accept. Optional
@@ -212,8 +212,9 @@ class WebSocketRequest(_SansIORequest):
             self._upgraded = True
             return WebSocket(self, self.socket)
         else:
-            self.socket.close(1003, f"Unexpected event {event.__class__.__name__}")
-            raise WebSocketProtocolError(f"Unexpected event {event}")
+            reason = f"Unexpected event {event.__class__.__name__}"
+            self.socket.close(1003, reason)
+            raise WebSocketProtocolError(reason)
 
     def close(self):
         """
