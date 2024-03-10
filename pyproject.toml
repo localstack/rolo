@@ -36,7 +36,8 @@ dev = [
     "pytest_httpserver",
     "websocket-client>=1.7.0",
     "coverage[toml]>=5.0.0",
-    "ruff==0.1.0"
+    "ruff==0.1.0",
+    "twisted>=24",
 ]
 
 [tool.setuptools]
