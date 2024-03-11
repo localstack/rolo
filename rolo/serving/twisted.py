@@ -218,6 +218,7 @@ class HeaderPreservingWSGIResource(WSGIResource):
 
 @implementer(IResource)
 class WebsocketResourceDecorator(proxyForInterface(IResource)):
+
     original: WSGIResource
     isLeaf = True
 
@@ -228,7 +229,6 @@ class WebsocketResourceDecorator(proxyForInterface(IResource)):
     ):
         super().__init__(original)
         self.websocketListener = websocketListener
-        self.channel = None
 
     def render(self, request: Request):
         if upgrade := request.getHeader("upgrade"):
@@ -239,21 +239,17 @@ class WebsocketResourceDecorator(proxyForInterface(IResource)):
         return super().render(request)
 
     def _processWebsocket(self, request: Request):
-        self.channel = WebSocketChannel(request)
+        channel = WebSocketChannel(request)
         if isinstance(request.channel.transport, ProtocolWrapper):
-            request.transport.wrappedProtocol = self.channel
+            request.transport.wrappedProtocol = channel
         else:
-            request.transport.protocol = self.channel
+            request.transport.protocol = channel
 
-        self.channel.initiateUpgrade()
+        channel.initiateUpgrade()
 
-        environment = self._toWsgiEnvironment(request)
+        environment = to_websocket_environment(request)
+        environment["rolo.websocket"] = TwistedWebSocketAdapter(channel)
         self.original._threadpool.callInThread(self.websocketListener, environment)
-
-    def _toWsgiEnvironment(self, request: Request) -> dict[str, t.Any]:
-        environ = to_websocket_environment(request)
-        environ["rolo.websocket"] = TwistedWebSocketAdapter(self.channel)
-        return environ
 
 
 class WebSocketChannel(Protocol):
