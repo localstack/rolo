@@ -30,10 +30,10 @@ test: venv
 	$(VENV_RUN); python -m pytest
 
 test-coverage: venv
-	$(VENV_RUN); python -m coverage run --source=$(ROOT_MODULE) -m pytest tests && coverage lcov -o .coverage.lcov
+	$(VENV_RUN); coverage run --source=$(ROOT_MODULE) -m pytest tests/
 
 coveralls: venv
-	$(VENV_RUN); python -m coveralls
+	$(VENV_RUN); coveralls
 
 dist: venv
 	$(VENV_RUN); pip install --upgrade build; python -m build
