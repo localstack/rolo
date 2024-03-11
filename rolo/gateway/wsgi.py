@@ -37,17 +37,14 @@ class WsgiGateway:
             environ.get("RAW_URI"),
         )
         request = Request(environ)
-        if "asgi.headers" in environ:
+
+        raw_headers = environ.get("rolo.headers") or environ.get("asgi.headers")
+        if raw_headers:
             # restores raw headers from ASGI scope, which allows dashes in header keys
             # see https://github.com/pallets/werkzeug/issues/940
 
             request.headers = Headers(
-                MultiDict(
-                    [
-                        (k.decode("latin-1"), v.decode("latin-1"))
-                        for (k, v) in environ["asgi.headers"]
-                    ]
-                )
+                MultiDict([(k.decode("latin-1"), v.decode("latin-1")) for (k, v) in raw_headers])
             )
         else:
             # by default, werkzeug requests from environ are immutable
