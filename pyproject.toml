@@ -36,6 +36,7 @@ dev = [
     "pytest_httpserver",
     "websocket-client>=1.7.0",
     "coverage[toml]>=5.0.0",
+    "coveralls",
     "ruff==0.1.0"
 ]
 
