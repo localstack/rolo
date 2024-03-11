@@ -436,7 +436,7 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
 
         self.asgi_send(asgi_event, timeout=timeout)
 
-    def respond(
+    def reject(
         self,
         status_code: int,
         headers: Headers = None,

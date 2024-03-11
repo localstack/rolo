@@ -10,7 +10,7 @@ WebSocketEnvironment: t.TypeAlias = t.Dict[str, t.Any]
 
 
 class Event:
-    """A websocket event (subset of wsproto.events)"""
+    """A websocket event (subset of ``wsproto.events``)."""
 
     pass
 
@@ -54,28 +54,6 @@ class WebSocketAdapter:
     under the assumption that the lower-level IO framework will abstract them away.
     """
 
-    def receive(
-        self,
-        timeout: float = None,
-    ) -> CreateConnection | Message:
-        raise NotImplementedError
-
-    def send(
-        self,
-        event: Message,
-        timeout: float = None,
-    ):
-        raise NotImplementedError
-
-    def respond(
-        self,
-        status_code: int,
-        headers: Headers = None,
-        body: t.Iterable[bytes] = None,
-        timeout: float = None,
-    ):
-        raise NotImplementedError
-
     def accept(
         self,
         subprotocol: str = None,
@@ -83,6 +61,55 @@ class WebSocketAdapter:
         extra_headers: Headers = None,
         timeout: float = None,
     ):
+        """
+        Accept the websocket upgrade request and send an accept message back to the client. This or
+        ``reject`` must be the first things to be called.
+
+        :param subprotocol: the accepted subprotocol
+        :param extensions: any accepted extensions to use
+        :param extra_headers: headers to pass to the accept response
+        :param timeout: optional timeout
+        """
+        raise NotImplementedError
+
+    def reject(
+        self,
+        status_code: int,
+        headers: Headers = None,
+        body: t.Iterable[bytes] = None,
+        timeout: float = None,
+    ):
+        """
+        Reject the websocket request. This means sending an actual HTTP response back to the client, i.e.,
+        not upgrading the connection. This only makes sense before any call to ``receive`` was made.
+
+        :param status_code: the HTTP response status code
+        :param headers: the HTTP response headers
+        :param body: the body
+        :param timeout: optional timeout
+        """
+        raise NotImplementedError
+
+    def receive(
+        self,
+        timeout: float = None,
+    ) -> CreateConnection | Message:
+        """Blocking IO method to wait for the next ``Message`` or, if not initialized yet, the first
+        ``CreateConnection`` event."""
+        raise NotImplementedError
+
+    def send(
+        self,
+        event: Message,
+        timeout: float = None,
+    ):
+        """
+        Send the given message to the websocket.
+
+        :param event: the message to send
+        :param timeout: optional timeout
+        :return:
+        """
         raise NotImplementedError
 
     def close(self, code: int = 1001, reason: str = None, timeout: float = None):

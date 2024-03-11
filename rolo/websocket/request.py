@@ -163,7 +163,7 @@ class WebSocketRequest(_SansIORequest):
         if self._rejected:
             raise ValueError("Websocket connection already rejected")
 
-        self.socket.respond(
+        self.socket.reject(
             response.status_code,
             response.headers,
             response.iter_encoded(),
