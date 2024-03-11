@@ -10,6 +10,7 @@
 <p>
   <a href="https://github.com/localstack/rolo/actions/workflows/build.yml"><img alt="CI badge" src="https://github.com/localstack/rolo/actions/workflows/build.yml/badge.svg"></img></a>
   <a href="https://pypi.org/project/rolo/"><img alt="PyPI Version" src="https://img.shields.io/pypi/v/rolo?color=blue"></a>
+  <a href="https://coveralls.io/github/localstack/rolo?branch=main"><img src="https://coveralls.io/repos/github/localstack/rolo/badge.svg?branch=main"></a>
   <a href="https://img.shields.io/pypi/l/rolo.svg"><img alt="PyPI License" src="https://img.shields.io/pypi/l/rolo.svg"></a>
   <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
 </p>
