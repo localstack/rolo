@@ -116,10 +116,11 @@ def populate_wsgi_environment(
     environ["wsgi.multiprocess"] = False
     environ["wsgi.run_once"] = False
 
-    # asgi.headers: a custom key to allow downstream applications to circumvent WSGI header processing. these headers
+    # rolo.headers: a custom key to allow downstream applications to circumvent WSGI header processing. these headers
     # should preserve the original casing as the client sends them.
     headers = scope.get("headers")
-    environ["asgi.headers"] = headers
+    environ["rolo.headers"] = headers
+    environ["asgi.headers"] = environ["rolo.headers"]
 
 
 class _AsyncGeneratorWrapper:
@@ -435,7 +436,7 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
 
         self.asgi_send(asgi_event, timeout=timeout)
 
-    def respond(
+    def reject(
         self,
         status_code: int,
         headers: Headers = None,

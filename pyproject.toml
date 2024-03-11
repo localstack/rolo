@@ -37,6 +37,7 @@ dev = [
     "websocket-client>=1.7.0",
     "coverage[toml]>=5.0.0",
     "coveralls>=3.3",
+    "twisted>=24",
     "ruff==0.1.0"
 ]
 

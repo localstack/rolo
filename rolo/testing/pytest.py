@@ -17,17 +17,20 @@ from rolo.dispatcher import handler_dispatcher
 from rolo.gateway import Gateway
 from rolo.gateway.asgi import AsgiGateway
 from rolo.gateway.wsgi import WsgiGateway
+from rolo.serving.twisted import TwistedGateway
 from rolo.websocket.adapter import WebSocketListener
 
 if typing.TYPE_CHECKING:
     from hypercorn.typing import ASGIFramework
 
 
-class Server(Protocol):
+class ServerInfo(Protocol):
     url: str
     host: str
     port: int
 
+
+class Server(ServerInfo):
     def shutdown(self):
         ...
 
@@ -123,9 +126,7 @@ def serve_asgi_app():
         srv = _ServerInfo(host, port, f"http://{host}:{port}")
         srv.shutdown = _shutdown
 
-        assert poll_condition(
-            lambda: is_server_up(srv), timeout=5, interval=0.1
-        ), f"gave up waiting for server {srv}"
+        assert wait_server_is_up(srv), f"gave up waiting for server {srv}"
 
         return srv
 
@@ -173,7 +174,88 @@ def serve_asgi_gateway(serve_asgi_app):
     return _serve
 
 
-def is_server_up(srv: Server):
+@pytest.fixture(scope="session")
+def twisted_reactor():
+    """Session fixture that controls the lifecycle of the main twisted reactor."""
+    from twisted.internet import reactor
+    from twisted.internet.error import ReactorAlreadyRunning
+    from twisted.web.http import HTTPFactory
+
+    def _run():
+        if reactor.running:
+            return
+
+        try:
+            # for some reason, when using a `SelectReactor` (like you do by default on MacOS), whatever
+            # protocols are added to the reactor via `listenTCP` _after_ `run` has been called,
+            # are not served properly. We see this because the request calls in tests block forever. If we
+            # add any listener here before calling `run`, then for some reason it works. 🤷
+            reactor.listenTCP(get_random_tcp_port(), HTTPFactory())
+            reactor.run(installSignalHandlers=False)
+        except ReactorAlreadyRunning:
+            pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    assert poll_condition(
+        lambda: reactor.running, timeout=5
+    ), f"gave up waiting for {reactor} to start"
+
+    yield reactor
+
+    reactor.stop()
+
+
+@pytest.fixture
+def serve_twisted_tcp_server(twisted_reactor):
+    """Factory ficture for serving a twisted protocol factory (like ``Site``) through the twisted reactor."""
+    from twisted.internet.tcp import Port
+
+    ports: list[Port] = []
+
+    def _create(protocol_factory):
+        port = get_random_tcp_port()
+        host = "localhost"
+        ports.append(twisted_reactor.listenTCP(port, protocol_factory))
+        srv = _ServerInfo(host, port, f"http://{host}:{port}")
+        assert wait_server_is_up(srv), f"gave up waiting for {srv}"
+        return srv
+
+    yield _create
+
+    for _port in ports:
+        _port.stopListening()
+
+
+@pytest.fixture
+def serve_twisted_gateway(serve_twisted_tcp_server):
+    def _create(gateway):
+        return serve_twisted_tcp_server(TwistedGateway(gateway))
+
+    yield _create
+
+
+@pytest.fixture
+def serve_twisted_websocket_listener(twisted_reactor, serve_twisted_tcp_server):
+    from twisted.web.server import Site
+
+    from rolo.serving.twisted import HeaderPreservingWSGIResource, WebsocketResourceDecorator
+
+    def _create(websocket_listener: WebSocketListener):
+        site = Site(
+            WebsocketResourceDecorator(
+                original=HeaderPreservingWSGIResource(
+                    twisted_reactor, twisted_reactor.getThreadPool(), None
+                ),
+                websocketListener=websocket_listener,
+            )
+        )
+        return serve_twisted_tcp_server(site)
+
+    return _create
+
+
+def is_server_up(srv: ServerInfo):
     args = socket.getaddrinfo(srv.host, srv.port, socket.AF_INET, socket.SOCK_STREAM)
     for family, socktype, proto, _canonname, sockaddr in args:
         s = socket.socket(family, socktype, proto)
@@ -184,6 +266,10 @@ def is_server_up(srv: Server):
         else:
             s.close()
             return True
+
+
+def wait_server_is_up(srv: ServerInfo, timeout: float = 10, interval: float = 0.1) -> bool:
+    return poll_condition(lambda: is_server_up(srv), timeout=timeout, interval=interval)
 
 
 def get_random_tcp_port() -> int:

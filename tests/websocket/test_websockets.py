@@ -4,9 +4,10 @@ from queue import Queue
 
 import pytest
 import websocket
+from _pytest.fixtures import SubRequest
 from werkzeug.datastructures import Headers
 
-from rolo import Router
+from rolo import Response, Router
 from rolo.websocket.request import (
     WebSocketDisconnectedError,
     WebSocketProtocolError,
@@ -14,7 +15,20 @@ from rolo.websocket.request import (
 )
 
 
-def test_websocket_basic_interaction(serve_asgi_adapter):
+@pytest.fixture(params=["asgi", "twisted"])
+def serve_websocket_listener(request: SubRequest):
+    def _serve(listener):
+        if request.param == "asgi":
+            srv = request.getfixturevalue("serve_asgi_adapter")
+            return srv(wsgi_app=None, websocket_listener=listener)
+        else:
+            srv = request.getfixturevalue("serve_twisted_websocket_listener")
+            return srv(listener)
+
+    yield _serve
+
+
+def test_websocket_basic_interaction(serve_websocket_listener):
     raised = threading.Event()
 
     @WebSocketRequest.listener
@@ -29,7 +43,7 @@ def test_websocket_basic_interaction(serve_asgi_adapter):
 
         raised.set()
 
-    server = serve_asgi_adapter(wsgi_app=None, websocket_listener=app)
+    server = serve_websocket_listener(app)
 
     client = websocket.WebSocket()
     client.connect(server.url.replace("http://", "ws://"))
@@ -41,7 +55,7 @@ def test_websocket_basic_interaction(serve_asgi_adapter):
     assert raised.wait(timeout=3)
 
 
-def test_websocket_disconnect_while_iter(serve_asgi_adapter):
+def test_websocket_disconnect_while_iter(serve_websocket_listener):
     """Makes sure that the ``for line in iter(ws)`` pattern works smoothly when the client disconnects."""
     returned = threading.Event()
     received = []
@@ -54,7 +68,7 @@ def test_websocket_disconnect_while_iter(serve_asgi_adapter):
 
         returned.set()
 
-    server = serve_asgi_adapter(wsgi_app=None, websocket_listener=app)
+    server = serve_websocket_listener(app)
 
     client = websocket.WebSocket()
     client.connect(server.url.replace("http://", "ws://"))
@@ -68,13 +82,13 @@ def test_websocket_disconnect_while_iter(serve_asgi_adapter):
     assert received[1] == "bar"
 
 
-def test_websocket_headers(serve_asgi_adapter):
+def test_websocket_headers(serve_websocket_listener):
     @WebSocketRequest.listener
     def echo_headers(request: WebSocketRequest):
         with request.accept(headers=Headers({"x-foo-bar": "foobar"})) as ws:
             ws.send(json.dumps(dict(request.headers)))
 
-    server = serve_asgi_adapter(wsgi_app=None, websocket_listener=echo_headers)
+    server = serve_websocket_listener(echo_headers)
 
     client = websocket.WebSocket()
     client.connect(
@@ -89,7 +103,22 @@ def test_websocket_headers(serve_asgi_adapter):
     assert headers["Authorization"] == "Basic let-me-in"
 
 
-def test_binary_and_text_mode(serve_asgi_adapter):
+def test_websocket_reject(serve_websocket_listener):
+    @WebSocketRequest.listener
+    def respond(request: WebSocketRequest):
+        request.reject(Response("nope", 403))
+
+    server = serve_websocket_listener(respond)
+
+    socket = websocket.WebSocket()
+    with pytest.raises(websocket.WebSocketBadStatusException) as e:
+        socket.connect(server.url.replace("http://", "ws://"))
+
+    assert e.value.status_code == 403
+    assert e.value.resp_body == b"nope"
+
+
+def test_binary_and_text_mode(serve_websocket_listener):
     received = Queue()
 
     @WebSocketRequest.listener
@@ -100,7 +129,7 @@ def test_binary_and_text_mode(serve_asgi_adapter):
             received.put(ws.receive())
             received.put(ws.receive())
 
-    server = serve_asgi_adapter(wsgi_app=None, websocket_listener=echo_headers)
+    server = serve_websocket_listener(echo_headers)
 
     client = websocket.WebSocket()
     client.connect(server.url.replace("http://", "ws://"))
@@ -119,7 +148,7 @@ def test_binary_and_text_mode(serve_asgi_adapter):
     assert received.get(timeout=5) == b"bar"
 
 
-def test_send_non_confirming_data(serve_asgi_adapter):
+def test_send_non_confirming_data(serve_websocket_listener):
     match = Queue()
 
     @WebSocketRequest.listener
@@ -129,7 +158,7 @@ def test_send_non_confirming_data(serve_asgi_adapter):
                 ws.send({"foo": "bar"})
             match.put(e)
 
-    server = serve_asgi_adapter(wsgi_app=None, websocket_listener=echo_headers)
+    server = serve_websocket_listener(echo_headers)
 
     client = websocket.WebSocket()
     client.connect(server.url.replace("http://", "ws://"))
@@ -138,7 +167,7 @@ def test_send_non_confirming_data(serve_asgi_adapter):
     assert e.match("Cannot send data type <class 'dict'> over websocket")
 
 
-def test_router_integration(serve_asgi_adapter):
+def test_router_integration(serve_websocket_listener):
     router = Router()
 
     def _handler(request: WebSocketRequest, request_args: dict):
@@ -148,10 +177,7 @@ def test_router_integration(serve_asgi_adapter):
 
     router.add("/foo/<id>", _handler)
 
-    server = serve_asgi_adapter(
-        wsgi_app=None,
-        websocket_listener=WebSocketRequest.listener(router.dispatch),
-    )
+    server = serve_websocket_listener(WebSocketRequest.listener(router.dispatch))
     client = websocket.WebSocket()
     client.connect(server.url.replace("http://", "ws://") + "/foo/bar")
     assert client.recv() == "foo"
