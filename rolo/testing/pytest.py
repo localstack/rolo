@@ -24,11 +24,13 @@ if typing.TYPE_CHECKING:
     from hypercorn.typing import ASGIFramework
 
 
-class Server(Protocol):
+class ServerInfo(Protocol):
     url: str
     host: str
     port: int
 
+
+class Server(ServerInfo):
     def shutdown(self):
         ...
 
@@ -124,9 +126,7 @@ def serve_asgi_app():
         srv = _ServerInfo(host, port, f"http://{host}:{port}")
         srv.shutdown = _shutdown
 
-        assert poll_condition(
-            lambda: is_server_up(srv), timeout=5, interval=0.1
-        ), f"gave up waiting for server {srv}"
+        assert wait_server_is_up(srv), f"gave up waiting for server {srv}"
 
         return srv
 
@@ -179,14 +179,27 @@ def twisted_reactor():
     """Session fixture that controls the lifecycle of the main twisted reactor."""
     from twisted.internet import reactor
     from twisted.internet.error import ReactorAlreadyRunning
+    from twisted.web.http import HTTPFactory
 
     def _run():
+        if reactor.running:
+            return
+
         try:
+            # for some reason, when using a `SelectReactor` (like you do by default on MacOS), whatever
+            # protocols are added to the reactor via `listenTCP` _after_ `run` has been called,
+            # are not served properly. We see this because the request calls in tests block forever. If we
+            # add any listener here before calling `run`, then for some reason it works. 🤷
+            reactor.listenTCP(get_random_tcp_port(), HTTPFactory())
             reactor.run(installSignalHandlers=False)
         except ReactorAlreadyRunning:
             pass
 
     threading.Thread(target=_run, daemon=True).start()
+
+    assert poll_condition(
+        lambda: reactor.running, timeout=5
+    ), f"gave up waiting for {reactor} to start"
 
     yield reactor
 
@@ -204,7 +217,9 @@ def serve_twisted_tcp_server(twisted_reactor):
         port = get_random_tcp_port()
         host = "localhost"
         ports.append(twisted_reactor.listenTCP(port, protocol_factory))
-        return _ServerInfo(host, port, f"http://{host}:{port}")
+        srv = _ServerInfo(host, port, f"http://{host}:{port}")
+        assert wait_server_is_up(srv), f"gave up waiting for {srv}"
+        return srv
 
     yield _create
 
@@ -240,7 +255,7 @@ def serve_twisted_websocket_listener(twisted_reactor, serve_twisted_tcp_server):
     return _create
 
 
-def is_server_up(srv: Server):
+def is_server_up(srv: ServerInfo):
     args = socket.getaddrinfo(srv.host, srv.port, socket.AF_INET, socket.SOCK_STREAM)
     for family, socktype, proto, _canonname, sockaddr in args:
         s = socket.socket(family, socktype, proto)
@@ -251,6 +266,10 @@ def is_server_up(srv: Server):
         else:
             s.close()
             return True
+
+
+def wait_server_is_up(srv: ServerInfo, timeout: float = 10, interval: float = 0.1) -> bool:
+    return poll_condition(lambda: is_server_up(srv), timeout=timeout, interval=interval)
 
 
 def get_random_tcp_port() -> int:
