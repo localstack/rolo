@@ -1,5 +1,7 @@
 from unittest import mock
 
+from werkzeug.datastructures import Headers
+
 from rolo.gateway import CompositeFinalizer, CompositeHandler, HandlerChain, RequestContext
 from rolo.response import Response
 
@@ -82,6 +84,32 @@ def test_composite_finalizer_handler_exception():
     finalizer3.assert_called_once()
 
     assert chain.error is None
+
+
+def test_respond_with_json_response():
+    def handle(chain_: HandlerChain, _context, _response):
+        chain_.respond(202, {"foo": "bar"}, headers={"X-Foo": "Bar"})
+
+    chain = HandlerChain(request_handlers=[handle])
+    chain.handle(RequestContext(), Response())
+
+    assert chain.response.status_code == 202
+    assert chain.response.json == {"foo": "bar"}
+    assert chain.response.headers.get("x-foo") == "Bar"
+    assert chain.response.mimetype == "application/json"
+
+
+def test_respond_with_string_response():
+    def handle(chain_: HandlerChain, _context, _response):
+        chain_.respond(200, "foobar", Headers({"X-Foo": "Bar"}))
+
+    chain = HandlerChain(request_handlers=[handle])
+    chain.handle(RequestContext(), Response())
+
+    assert chain.response.status_code == 200
+    assert chain.response.data == b"foobar"
+    assert chain.response.headers.get("x-foo") == "Bar"
+    assert chain.response.mimetype == "text/plain"
 
 
 class TestCompositeHandler:

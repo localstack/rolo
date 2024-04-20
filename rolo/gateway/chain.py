@@ -188,7 +188,12 @@ class HandlerChain(t.Generic[RC]):
             if not self.finalized:
                 self._call_finalizers(response)
 
-    def respond(self, status_code: int = 200, payload: t.Any = None, headers: Headers = None):
+    def respond(
+        self,
+        status_code: int = 200,
+        payload: t.Any = None,
+        headers: t.Union[Headers, t.Mapping] = None,
+    ):
         """
         Convenience method for handlers to stop the chain and set the given status and payload to the
         current response object.
