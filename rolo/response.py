@@ -1,7 +1,13 @@
 import json
-from typing import Any, Dict, Iterable, Type, Union
+import mimetypes
+import typing as t
+from importlib import resources
 
+from werkzeug.exceptions import NotFound
 from werkzeug.wrappers import Response as WerkzeugResponse
+
+if t.TYPE_CHECKING:
+    from types import ModuleType
 
 
 class Response(WerkzeugResponse):
@@ -22,7 +28,7 @@ class Response(WerkzeugResponse):
         self._on_close.extend(other._on_close)
         self.headers.update(other.headers)
 
-    def set_json(self, doc: Any, cls: Type[json.JSONEncoder] = None):
+    def set_json(self, doc: t.Any, cls: t.Type[json.JSONEncoder] = None):
         """
         Serializes the given dictionary using localstack's ``CustomEncoder`` into a json response, and sets the
         mimetype automatically to ``application/json``.
@@ -33,7 +39,7 @@ class Response(WerkzeugResponse):
         self.data = json.dumps(doc, cls=cls)
         self.mimetype = "application/json"
 
-    def set_response(self, response: Union[str, bytes, bytearray, Iterable[bytes]]):
+    def set_response(self, response: t.Union[str, bytes, bytearray, t.Iterable[bytes]]):
         """
         Function to set the low-level ``response`` object. This is copied from the werkzeug Response constructor. The
         response attribute always holds an iterable of bytes. Passing a str, bytes or bytearray is equivalent to
@@ -53,7 +59,7 @@ class Response(WerkzeugResponse):
 
         return self
 
-    def to_readonly_response_dict(self) -> Dict:
+    def to_readonly_response_dict(self) -> t.Dict:
         """
         Returns a read-only version of a response dictionary as it is often expected by other libraries like boto.
         """
@@ -64,7 +70,7 @@ class Response(WerkzeugResponse):
         }
 
     @classmethod
-    def for_json(cls, doc: Any, *args, **kwargs) -> "Response":
+    def for_json(cls, doc: t.Any, *args, **kwargs) -> "Response":
         """
         Creates a new JSON response from the given document. It automatically sets the mimetype to ``application/json``.
 
@@ -76,3 +82,22 @@ class Response(WerkzeugResponse):
         response = cls(*args, **kwargs)
         response.set_json(doc)
         return response
+
+    @classmethod
+    def for_resource(cls, module: "ModuleType", path: str, *args, **kwargs) -> "Response":
+        """
+        Looks up the given file in the given module, and creates a new Response object with the contents of that
+        file. It guesses the mimetype of the file and sets it in the response accordingly. If the file does not exist
+        ,it raises a ``NotFound`` error.
+
+        :param module: the module to look up the file in
+        :param path: the path/file name
+        :return: a new Response object
+        """
+        resource = resources.files(module).joinpath(path)
+        if not resource.is_file():
+            raise NotFound()
+        mimetype = mimetypes.guess_type(resource.name)
+        mimetype = mimetype[0] if mimetype and mimetype[0] else "application/octet-stream"
+
+        return cls(resource.open("rb"), *args, mimetype=mimetype, **kwargs)
