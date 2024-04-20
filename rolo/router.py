@@ -24,6 +24,9 @@ from werkzeug.routing import BaseConverter, Map, Rule, RuleFactory
 
 from .request import get_raw_path
 
+if t.TYPE_CHECKING:
+    from _typeshed.wsgi import WSGIApplication
+
 HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE")
 
 E = TypeVar("E")
@@ -402,6 +405,23 @@ class Router(Generic[E]):
             return fn
 
         return wrapper
+
+    def wsgi(self) -> "WSGIApplication":
+        """
+        Returns this router as a WSGI compatible interface. This can be used to conveniently serve a Router instance
+        through a WSGI server, for instance werkzeug's dev server::
+
+            from werkzeug.serving import run_simple
+
+            from rolo import Router
+            from rolo.dispatcher import handler_dispatcher
+
+            router = Router(dispatcher=handler_dispatcher())
+            run_simple("localhost", 5000, router.wsgi())
+
+        :return: a WSGI callable that invokes this router
+        """
+        return Request.application(self.dispatch)
 
 
 class RuleAdapter(RuleFactory):
