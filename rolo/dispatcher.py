@@ -12,6 +12,7 @@ ResultValue = Union[
     str,
     bytes,
     Dict[str, Any],  # a JSON dict
+    list[Any],
 ]
 
 
@@ -23,7 +24,7 @@ def _populate_response(
 
     elif isinstance(result, (str, bytes, bytearray)):
         response.data = result
-    elif isinstance(result, dict):
+    elif isinstance(result, (dict, list)):
         response.data = json.dumps(result, cls=json_encoder)
         response.mimetype = "application/json"
     else:

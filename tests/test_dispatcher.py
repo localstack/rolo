@@ -48,6 +48,21 @@ class TestHandlerDispatcher:
         router.add("/foo/<arg1>", handler)
         assert router.dispatch(Request("GET", "/foo/a")).json == {"arg1": "a", "hello": "there"}
 
+    def test_handler_dispatcher_with_list_return(self):
+        router = Router(dispatcher=handler_dispatcher())
+
+        def handler(_request: Request, arg1) -> Dict[str, Any]:
+            return [{"arg1": arg1, "hello": "there"}, 1, 2, "3", [4, 5]]
+
+        router.add("/foo/<arg1>", handler)
+        assert router.dispatch(Request("GET", "/foo/a")).json == [
+            {"arg1": "a", "hello": "there"},
+            1,
+            2,
+            "3",
+            [4, 5],
+        ]
+
     def test_handler_dispatcher_with_text_return(self):
         router = Router(dispatcher=handler_dispatcher())
 
