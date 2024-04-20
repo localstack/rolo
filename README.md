@@ -29,7 +29,7 @@ To allow asynchronous communication, Rolo introduces an ASGI/WSGI bridge, that a
 ### Default router example
 
 ```python
-from rolo import Router
+from rolo import Router, route, Response
 from werkzeug import Request
 from werkzeug.serving import run_simple
 
@@ -48,8 +48,7 @@ router.add(user)
 router.add(user_id)
 
 # convert Router to a WSGI app and serve it through werkzeug
-app = Request.application(router.dispatch)
-run_simple('localhost', 8080, app, use_reloader=True)
+run_simple('localhost', 8080, router.wsgi(), use_reloader=True)
 ```
 
 ### Gateway & Handler Chain
