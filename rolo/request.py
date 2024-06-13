@@ -295,12 +295,10 @@ def restore_payload(request: Request) -> bytes:
     if request.method != "POST":
         return data
 
-    # TODO: check how request that encode both files and form are really serialized (not sure this works this way)
-
-    if request.form:
+    if request.form and not request.files:
         data += urlencode(list(request.form.items(multi=True))).encode("utf-8")
 
-    if request.files:
+    elif request.files:
         boundary = request.content_type.split("=")[1]
 
         fields = MultiDict()
