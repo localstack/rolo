@@ -263,11 +263,13 @@ def test_restore_payload_multipart_parsing():
 
 
 def test_request_mixed_multipart():
-    # this is how we previously restored a form that would have both `form` fields and `files`
+    # this is almost how we previously restored a form that would have both `form` fields and `files`
     # we would URL encode the form first then add multipart, which does not work, the first part should be ignored
     # and make certain strict multipart parser fail (Starlette), because it finds data before the first boundary
+
+    # this test does something a bit different to prove it is ignored (add an URL encoded part in the beginning)
     body = (
-        b'formfield=not+a+file%2C+just+a+field\r\nn'
+        b'formfield=not+a+file%2C+just+a+field\r\n'
         b"--4efd159eae0c4f4e125a5a509e073d85"
         b"\r\n"
         b'Content-Disposition: form-data; name="foo"; filename="foo"'
@@ -308,3 +310,29 @@ def test_request_mixed_multipart():
         files.append(k)
 
     assert files == ["foo", "baz"]
+
+    restored_data = restore_payload(request)
+    assert b'formfield' not in restored_data
+
+
+def test_restore_payload_form_urlencoded():
+    body = b'formfield=not+a+file%2C+just+a+field'
+
+    request = Request(
+        "POST",
+        path="/",
+        body=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    form = {}
+    for k, field in request.form.items():
+        form[k] = field
+
+    assert form == {"formfield": "not a file, just a field"}
+
+    assert not request.files
+
+    restored_data = restore_payload(request)
+
+    assert restored_data == body

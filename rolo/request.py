@@ -295,10 +295,7 @@ def restore_payload(request: Request) -> bytes:
     if request.method != "POST":
         return data
 
-    if request.form and not request.files:
-        data += urlencode(list(request.form.items(multi=True))).encode("utf-8")
-
-    elif request.files:
+    if request.mimetype == "multipart/form-data":
         boundary = request.content_type.split("=")[1]
 
         fields = MultiDict()
@@ -307,5 +304,8 @@ def restore_payload(request: Request) -> bytes:
 
         _, data_files = encode_multipart(fields, boundary)
         data += data_files
+
+    elif request.mimetype == "application/x-www-form-urlencoded":
+        data += urlencode(list(request.form.items(multi=True))).encode("utf-8")
 
     return data
