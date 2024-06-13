@@ -210,13 +210,13 @@ def test_utf8_path():
 
 def test_restore_payload_multipart_parsing():
     body = (
-        b'\r\n'
-        b'--4efd159eae0c4f4e125a5a509e073d85'
-        b'\r\n'
+        b"\r\n"
+        b"--4efd159eae0c4f4e125a5a509e073d85"
+        b"\r\n"
         b'Content-Disposition: form-data; name="formfield"'
-        b'\r\n\r\n'
-        b'not a file, just a field'
-        b'\r\n'
+        b"\r\n\r\n"
+        b"not a file, just a field"
+        b"\r\n"
         b"--4efd159eae0c4f4e125a5a509e073d85"
         b"\r\n"
         b'Content-Disposition: form-data; name="foo"; filename="foo"'
@@ -232,7 +232,7 @@ def test_restore_payload_multipart_parsing():
         b"Content-Type: text/plain;"
         b"\r\n\r\n"
         b"ed"
-        b'\r\n'
+        b"\r\n"
         b"\r\n--4efd159eae0c4f4e125a5a509e073d85--"
         b"\r\n"
     )
@@ -269,7 +269,7 @@ def test_request_mixed_multipart():
 
     # this test does something a bit different to prove it is ignored (add an URL encoded part in the beginning)
     body = (
-        b'formfield=not+a+file%2C+just+a+field\r\n'
+        b"formfield=not+a+file%2C+just+a+field\r\n"
         b"--4efd159eae0c4f4e125a5a509e073d85"
         b"\r\n"
         b'Content-Disposition: form-data; name="foo"; filename="foo"'
@@ -285,7 +285,7 @@ def test_request_mixed_multipart():
         b"Content-Type: text/plain;"
         b"\r\n\r\n"
         b"ed"
-        b'\r\n'
+        b"\r\n"
         b"\r\n--4efd159eae0c4f4e125a5a509e073d85--"
         b"\r\n"
     )
@@ -312,11 +312,11 @@ def test_request_mixed_multipart():
     assert files == ["foo", "baz"]
 
     restored_data = restore_payload(request)
-    assert b'formfield' not in restored_data
+    assert b"formfield" not in restored_data
 
 
 def test_restore_payload_form_urlencoded():
-    body = b'formfield=not+a+file%2C+just+a+field'
+    body = b"formfield=not+a+file%2C+just+a+field"
 
     request = Request(
         "POST",
