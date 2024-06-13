@@ -38,7 +38,7 @@ coveralls: venv
 dist: venv
 	$(VENV_RUN); pip install --upgrade build; python -m build
 
-deploy: clean-dist venv test dist
+publish: clean-dist venv test dist
 	$(VENV_RUN); pip install --upgrade twine; twine upload dist/*
 
 clean-dist: clean
