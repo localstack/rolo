@@ -3,7 +3,7 @@ import wsgiref.validate
 import pytest
 from werkzeug.exceptions import BadRequest
 
-from rolo.request import Request, dummy_wsgi_environment, get_raw_path
+from rolo.request import Request, dummy_wsgi_environment, get_raw_path, restore_payload
 
 
 def test_get_json():
@@ -206,3 +206,133 @@ def test_utf8_path():
 
     assert r.path == "/foo/Ā0Ä"
     assert r.environ["PATH_INFO"] == "/foo/Ä\x800Ã\x84"  # quoted and latin-1 encoded
+
+
+def test_restore_payload_multipart_parsing():
+    body = (
+        b"\r\n"
+        b"--4efd159eae0c4f4e125a5a509e073d85"
+        b"\r\n"
+        b'Content-Disposition: form-data; name="formfield"'
+        b"\r\n\r\n"
+        b"not a file, just a field"
+        b"\r\n"
+        b"--4efd159eae0c4f4e125a5a509e073d85"
+        b"\r\n"
+        b'Content-Disposition: form-data; name="foo"; filename="foo"'
+        b"\r\n"
+        b"Content-Type: text/plain;"
+        b"\r\n\r\n"
+        b"bar"
+        b"\r\n"
+        b"--4efd159eae0c4f4e125a5a509e073d85"
+        b"\r\n"
+        b'Content-Disposition: form-data; name="baz"; filename="baz"'
+        b"\r\n"
+        b"Content-Type: text/plain;"
+        b"\r\n\r\n"
+        b"ed"
+        b"\r\n"
+        b"\r\n--4efd159eae0c4f4e125a5a509e073d85--"
+        b"\r\n"
+    )
+
+    request = Request(
+        "POST",
+        path="/",
+        body=body,
+        headers={"Content-Type": "multipart/form-data; boundary=4efd159eae0c4f4e125a5a509e073d85"},
+    )
+
+    form = {}
+    for k, field in request.form.items():
+        form[k] = field
+
+    assert form == {"formfield": "not a file, just a field"}
+
+    files = []
+    for k, file_storage in request.files.items():
+        assert file_storage.stream
+        # we do not want to consume the file storage stream, because we can't restore the payload then
+        files.append(k)
+
+    assert files == ["foo", "baz"]
+    restored_data = restore_payload(request)
+
+    assert restored_data == body
+
+
+def test_request_mixed_multipart():
+    # this is almost how we previously restored a form that would have both `form` fields and `files`
+    # we would URL encode the form first then add multipart, which does not work, the first part should be ignored
+    # and make certain strict multipart parser fail (Starlette), because it finds data before the first boundary
+
+    # this test does something a bit different to prove it is ignored (add an URL encoded part in the beginning)
+    body = (
+        b"formfield=not+a+file%2C+just+a+field\r\n"
+        b"--4efd159eae0c4f4e125a5a509e073d85"
+        b"\r\n"
+        b'Content-Disposition: form-data; name="foo"; filename="foo"'
+        b"\r\n"
+        b"Content-Type: text/plain;"
+        b"\r\n\r\n"
+        b"bar"
+        b"\r\n"
+        b"--4efd159eae0c4f4e125a5a509e073d85"
+        b"\r\n"
+        b'Content-Disposition: form-data; name="baz"; filename="baz"'
+        b"\r\n"
+        b"Content-Type: text/plain;"
+        b"\r\n\r\n"
+        b"ed"
+        b"\r\n"
+        b"\r\n--4efd159eae0c4f4e125a5a509e073d85--"
+        b"\r\n"
+    )
+
+    request = Request(
+        "POST",
+        path="/",
+        body=body,
+        headers={"Content-Type": "multipart/form-data; boundary=4efd159eae0c4f4e125a5a509e073d85"},
+    )
+
+    form = {}
+    for k, field in request.form.items():
+        form[k] = field
+
+    assert form == {}
+
+    files = []
+    for k, file_storage in request.files.items():
+        assert file_storage.stream
+        # we do not want to consume the file storage stream, because we can't restore the payload then
+        files.append(k)
+
+    assert files == ["foo", "baz"]
+
+    restored_data = restore_payload(request)
+    assert b"formfield" not in restored_data
+
+
+def test_restore_payload_form_urlencoded():
+    body = b"formfield=not+a+file%2C+just+a+field"
+
+    request = Request(
+        "POST",
+        path="/",
+        body=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    form = {}
+    for k, field in request.form.items():
+        form[k] = field
+
+    assert form == {"formfield": "not a file, just a field"}
+
+    assert not request.files
+
+    restored_data = restore_payload(request)
+
+    assert restored_data == body
