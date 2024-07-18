@@ -72,9 +72,6 @@ class Handler(Protocol):
 
 
 def _try_parse_pydantic_request_body(request: Request, endpoint: Handler) -> Optional[dict]:
-    if not request.content_length:
-        return None
-
     if not inspect.isfunction(endpoint) and not inspect.ismethod(endpoint):
         # cannot yet dispatch to other callables (e.g. an object with a `__call__` method)
         return None
@@ -84,6 +81,8 @@ def _try_parse_pydantic_request_body(request: Request, endpoint: Handler) -> Opt
     arg_name = None
     arg_type = None
     for k, v in endpoint.__annotations__.items():
+        if k == "return":
+            continue
         if issubclass(v, pydantic.BaseModel):
             arg_name = k
             arg_type = v
@@ -91,6 +90,10 @@ def _try_parse_pydantic_request_body(request: Request, endpoint: Handler) -> Opt
 
     if arg_type is None:
         return None
+
+    if not request.content_length:
+        # forces a Validation error "Invalid JSON: EOF while parsing a value at line 1 column 0"
+        arg_type.model_validate_json(b"")
 
     # TODO: error handling
     obj = request.get_json(force=True)

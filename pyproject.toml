@@ -76,4 +76,12 @@ exclude = [
     "target",
     "*.egg-info",
     ".git",
-    ]
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__ == .__main__.:",
+    "raise NotImplemented.",
+    "return NotImplemented",
+    "def __repr__",
+]

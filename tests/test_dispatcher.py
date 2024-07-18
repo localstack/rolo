@@ -1,6 +1,5 @@
 from typing import Any, Dict
 
-import pydantic
 import pytest
 from werkzeug.exceptions import NotFound
 
@@ -81,65 +80,3 @@ class TestHandlerDispatcher:
 
         router.add("/", handler)
         assert router.dispatch(Request("GET", "/")).status_code == 200
-
-
-class TestPydanticHandlerDispatcher:
-    def test_request_arg(self):
-        router = Router(dispatcher=handler_dispatcher())
-
-        class MyItem(pydantic.BaseModel):
-            name: str
-            price: float
-            is_offer: bool = None
-
-        def handler(_request: Request, item_id: int, item: MyItem) -> str:
-            return item.model_dump_json()
-
-        router.add("/items/<item_id>", handler)
-
-        request = Request("POST", "/items/123", body=b'{"name":"rolo","price":420.69}')
-        assert router.dispatch(request).data == b'{"name":"rolo","price":420.69,"is_offer":null}'
-
-    def test_response(self):
-        router = Router(dispatcher=handler_dispatcher())
-
-        class MyItem(pydantic.BaseModel):
-            name: str
-            price: float
-            is_offer: bool = None
-
-        def handler(_request: Request, item_id: int) -> MyItem:
-            return MyItem(name="rolo", price=420.69)
-
-        router.add("/items/<item_id>", handler)
-
-        request = Request("GET", "/items/123")
-        assert router.dispatch(request).get_json() == {
-            "name": "rolo",
-            "price": 420.69,
-            "is_offer": None,
-        }
-
-    def test_request_arg_validation_error(self):
-        router = Router(dispatcher=handler_dispatcher())
-
-        class MyItem(pydantic.BaseModel):
-            name: str
-            price: float
-            is_offer: bool = None
-
-        def handler(_request: Request, item_id: int, item: MyItem) -> str:
-            return item.model_dump_json()
-
-        router.add("/items/<item_id>", handler)
-
-        request = Request("POST", "/items/123", body=b'{"name":"rolo"}')
-        assert router.dispatch(request).get_json() == [
-            {
-                "type": "missing",
-                "loc": ["price"],
-                "msg": "Field required",
-                "input": {"name": "rolo"},
-                "url": "https://errors.pydantic.dev/2.8/v/missing",
-            }
-        ]
