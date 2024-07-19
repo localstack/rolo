@@ -1,11 +1,22 @@
+import inspect
 import json
-from typing import Any, Dict, Protocol, Type, Union
+import logging
+from typing import Any, Dict, Optional, Protocol, Type, Union
 
 from werkzeug import Response as WerkzeugResponse
+
+try:
+    import pydantic
+
+    ENABLE_PYDANTIC = True
+except ImportError:
+    ENABLE_PYDANTIC = False
 
 from .request import Request
 from .response import Response
 from .router import Dispatcher, RequestArguments
+
+LOG = logging.getLogger(__name__)
 
 ResultValue = Union[
     WerkzeugResponse,
@@ -60,6 +71,37 @@ class Handler(Protocol):
         raise NotImplementedError
 
 
+def _try_parse_pydantic_request_body(request: Request, endpoint: Handler) -> Optional[dict]:
+    if not inspect.isfunction(endpoint) and not inspect.ismethod(endpoint):
+        # cannot yet dispatch to other callables (e.g. an object with a `__call__` method)
+        return None
+
+    # finds the first pydantic.BaseModel in the list of annotations.
+    # ``def foo(request: Request, id: int, item: MyItem)`` would yield ``('my_item', MyItem)``
+    arg_name = None
+    arg_type = None
+    for k, v in endpoint.__annotations__.items():
+        if k == "return":
+            continue
+        if issubclass(v, pydantic.BaseModel):
+            arg_name = k
+            arg_type = v
+            break
+
+    if arg_type is None:
+        return None
+
+    if not request.content_length:
+        # forces a Validation error "Invalid JSON: EOF while parsing a value at line 1 column 0"
+        arg_type.model_validate_json(b"")
+
+    # TODO: error handling
+    obj = request.get_json(force=True)
+
+    # TODO: error handling
+    return {arg_name: arg_type.model_validate(obj)}
+
+
 def handler_dispatcher(json_encoder: Type[json.JSONEncoder] = None) -> Dispatcher[Handler]:
     """
     Creates a Dispatcher that treats endpoints like callables of the ``Handler`` Protocol.
@@ -69,9 +111,22 @@ def handler_dispatcher(json_encoder: Type[json.JSONEncoder] = None) -> Dispatche
     """
 
     def _dispatch(request: Request, endpoint: Handler, args: RequestArguments) -> Response:
-        result = endpoint(request, **args)
+        if ENABLE_PYDANTIC:
+            try:
+                kwargs = _try_parse_pydantic_request_body(request, endpoint) or {}
+                result = endpoint(request, **{**args, **kwargs})
+            except pydantic.ValidationError as e:
+                return Response(e.json(), mimetype="application/json", status=400)
+
+            if isinstance(result, pydantic.BaseModel):
+                result = result.model_dump()
+
+        else:
+            result = endpoint(request, **args)
+
         if isinstance(result, WerkzeugResponse):
             return result
+
         response = Response()
         if result is not None:
             _populate_response(response, result, json_encoder)
