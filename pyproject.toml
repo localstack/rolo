@@ -41,6 +41,10 @@ dev = [
     "twisted>=24",
     "ruff==0.1.0"
 ]
+docs = [
+    "sphinx",
+    "furo",
+]
 
 [tool.setuptools]
 include-package-data = false

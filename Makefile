@@ -35,6 +35,15 @@ test-coverage: venv
 coveralls: venv
 	$(VENV_RUN); coveralls
 
+$(VENV_DIR)/.docs-install: pyproject.toml $(VENV_ACTIVATE)
+	$(VENV_RUN); pip install -e .[docs]
+	touch $(VENV_DIR)/.docs-install
+
+install-docs: $(VENV_DIR)/.docs-install
+
+docs: install-docs
+	$(VENV_RUN); cd docs && make html
+
 dist: venv
 	$(VENV_RUN); pip install --upgrade build; python -m build
 
