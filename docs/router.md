@@ -2,6 +2,7 @@ Router
 ======
 
 Routers are based on Werkzeug's [URL Map](https://werkzeug.palletsprojects.com/en/2.3.x/routing/), but dispatch to handler functions directly.
+All features from Werkzeug's URL routing are inherited, including the [rule string format](https://werkzeug.palletsprojects.com/en/latest/routing/#rule-format) and [type converters](https://werkzeug.palletsprojects.com/en/latest/routing/#built-in-converters).
 
 `@route`
 --------
@@ -31,6 +32,8 @@ router.add(get_user_by_id)
 # convert Router to a WSGI app and serve it through werkzeug
 run_simple('localhost', 8080, router.wsgi(), use_reloader=True)
 ```
+
+Depending on the _dispatcher_ your Router uses, the signature of your endpoints will look differently.
 
 Handler dispatcher
 ------------------

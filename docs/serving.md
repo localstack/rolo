@@ -10,20 +10,19 @@ WSGI
 
 If you only need a `Router` instance to serve your application, you can convert to a WSGI app using the `Router.wsgi()` method.
 
-.. code-block:: python
+```python
+from rolo import Router, route
+from rolo.dispatcher import handler_dispatcher
 
-    from rolo import Router, route
-    from rolo.dispatcher import handler_dispatcher
+@route("/")
+def index(request):
+    return "hello world"
 
-    @route("/")
-    def index(request):
-        return "hello world"
+router = Router(dispatcher=handler_dispatcher())
+router.add(index)
 
-    router = Router(dispatcher=handler_dispatcher())
-    router.add(index)
-
-    app = router.wsgi()
-
+app = router.wsgi()
+```
 
 Now you can use any old WSGI compliant server to serve the application.
 For example, if this file is stored in `myapp.py`, using gunicorn, you can:

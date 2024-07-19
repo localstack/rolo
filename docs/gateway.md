@@ -1,21 +1,32 @@
 Gateway
 =======
 
-Builtin Handlers
-----------------
+The `Gateway` serves as the factory for `HandlerChain` instances.
+It also serves as the interface to HTTP servers.
 
-### Router Handler
-
-Sometimes you have a `Gateway` but also want to use the router.
-You can use the `RouterHandler` adapter to make a `Router` look like a handler chain `Handler`, and then pass it as handler to a Gateway.
+## Creating a Gateway
 
 ```python
-from rolo import Router
 from rolo.gateway import Gateway
-from rolo.gateway.handlers import RouterHandler
 
-router: Router = ...
-gateway: Gateway = ...
-
-gateway.request_handlers.append(RouterHandler(router))
+gateway = Gateway(
+    request_handlers=[
+        ...
+    ],
+    response_handlers=[
+        ...
+    ],
+    exception_handlers=[
+        ...
+    ],
+    finalizers=[
+        ...
+    ]
+)
 ```
+
+## Protocol adapters
+
+You can use `rolo.gateway.wsgi` or `rolo.gateway.asgi` to expose a `Gateway` as either a WSGI or ASGI app.
+
+Read more in the [serving](serving.md#serving) section.
