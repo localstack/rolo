@@ -9,7 +9,7 @@
 project = 'Rolo'
 copyright = '2024, LocalStack'
 author = 'Thomas Rausch'
-release = '0.6.0'
+release = '0.6.x'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -27,6 +27,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 html_theme = "furo"
 html_static_path = ["_static"]
+html_title = "Rolo documentation"
 
 html_logo = "_static/rolo.png"
 html_theme_options = {

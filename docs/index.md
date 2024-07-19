@@ -5,7 +5,7 @@ Rolo documentation
   <img src="https://github.com/thrau/rolo/assets/3996682/268786a8-6335-412f-bc72-8080f97cbb5a" alt="Rolo HTTP">
 </p>
 <p align="center">
-  Rolo HTTP: A Python framework for building HTTP-based server applications.
+  <b>Rolo HTTP: A Python framework for building HTTP-based server applications.</b>
 </p>
 
 ## Introduction
