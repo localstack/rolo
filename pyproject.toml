@@ -44,6 +44,7 @@ dev = [
 docs = [
     "sphinx",
     "furo",
+    "myst_parser",
 ]
 
 [tool.setuptools]
