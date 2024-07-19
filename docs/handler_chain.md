@@ -5,7 +5,7 @@ The rolo handler chain implements a variant of the chain-of-responsibility patte
 It is meant to be used together with a [`Gateway`](gateway.md), which is responsible for creating `HandlerChain` instances.
 
 Handler chains are a powerful abstraction to create complex HTTP server behavior, while keeping code cleanly encapsulated and the high-level logic easy to understand.
-You can find a simple example how to create a handler chain in the [Getting Started](getting_started.md#gateway) guide.
+You can find a simple example how to create a handler chain in the [Getting Started](getting_started.md) guide.
 
 ## Behavior
 

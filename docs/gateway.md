@@ -29,4 +29,4 @@ gateway = Gateway(
 
 You can use `rolo.gateway.wsgi` or `rolo.gateway.asgi` to expose a `Gateway` as either a WSGI or ASGI app.
 
-Read more in the [serving](serving.md#serving) section.
+Read more in the [serving](serving.md) section.
