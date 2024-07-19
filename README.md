@@ -28,18 +28,22 @@ To allow asynchronous communication, Rolo introduces an ASGI/WSGI bridge, that a
 
 ### Default router example
 
+Routers are based on Werkzeug's [URL Map](https://werkzeug.palletsprojects.com/en/2.3.x/routing/), but dispatch to handler functions directly.
+The `@route` decorator works similar to Flask or FastAPI, but they are not tied to an Application object.
+Instead, you can define routes on functions or methods, and then add them directly to the router.
+
 ```python
 from rolo import Router, route, Response
 from werkzeug import Request
 from werkzeug.serving import run_simple
 
 @route("/users")
-def user(_: Request, args):
+def user(_request: Request, args):
     assert not args
     return Response("user")
 
 @route("/users/<int:user_id>")
-def user_id(_: Request, args):
+def user_id(_request: Request, args):
     assert args
     return Response(f"{args['user_id']}")
 
@@ -49,6 +53,51 @@ router.add(user_id)
 
 # convert Router to a WSGI app and serve it through werkzeug
 run_simple('localhost', 8080, router.wsgi(), use_reloader=True)
+```
+
+### Pydantic integration
+
+Routers use dispatchers to dispatch the request to functions.
+In the previous example, the default dispatcher calls the function with the `Request` object and the request arguments as dictionary.
+The "handler dispatcher" can transform functions into more Flask or FastAPI-like functions, that also allow you to integrate with Pydantic.
+Here's how the default example from the FastAPI documentation would look like with rolo:
+
+```python
+import pydantic
+from werkzeug import Request
+from werkzeug.serving import run_simple
+
+from rolo import Router, route
+
+
+class Item(pydantic.BaseModel):
+    name: str
+    price: float
+    is_offer: bool | None = None
+
+
+@route("/", methods=["GET"])
+def read_root(request: Request):
+    return {"Hello": "World"}
+
+
+@route("/items/<int:item_id>", methods=["GET"])
+def read_item(request: Request, item_id: int):
+    return {"item_id": item_id, "q": request.query_string}
+
+
+@route("/items/<int:item_id>", methods=["PUT"])
+def update_item(item_id: int, item: Item):
+    return {"item_name": item.name, "item_id": item_id}
+
+
+router = Router()
+router.add(read_root)
+router.add(read_item)
+router.add(update_item)
+
+# convert Router to a WSGI app and serve it through werkzeug
+run_simple("localhost", 8080, router.wsgi(), use_reloader=True)
 ```
 
 ### Gateway & Handler Chain
