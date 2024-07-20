@@ -120,6 +120,14 @@ def handler_dispatcher(json_encoder: Type[json.JSONEncoder] = None) -> Dispatche
 
             if isinstance(result, pydantic.BaseModel):
                 result = result.model_dump()
+            if isinstance(result, (list, tuple)):
+                converted = []
+                for element in result:
+                    if isinstance(element, pydantic.BaseModel):
+                        converted.append(element.model_dump())
+                    else:
+                        converted.append(element)
+                result = converted
 
         else:
             result = endpoint(request, **args)
