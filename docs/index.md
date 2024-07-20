@@ -45,5 +45,6 @@ serving
 :maxdepth: 1
 
 tutorials/jsonrpc-server
+tutorials/rest-api-sqlmodel
 ```
 
