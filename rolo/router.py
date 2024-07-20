@@ -2,22 +2,7 @@ import functools
 import inspect
 import threading
 import typing as t
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Generic,
-    Iterable,
-    List,
-    Mapping,
-    NamedTuple,
-    Optional,
-    Protocol,
-    Type,
-    TypeVar,
-    Union,
-    overload,
-)
+from typing import overload
 
 from werkzeug import Request, Response
 from werkzeug.routing import BaseConverter, Map, Rule, RuleFactory
@@ -29,8 +14,8 @@ if t.TYPE_CHECKING:
 
 HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE")
 
-E = TypeVar("E")
-RequestArguments = Mapping[str, Any]
+E = t.TypeVar("E")
+RequestArguments = t.Mapping[str, t.Any]
 
 
 class RegexConverter(BaseConverter):
@@ -39,7 +24,7 @@ class RegexConverter(BaseConverter):
     When using groups in regex, make sure they are non-capturing ``(?:[a-z]+)``
     """
 
-    def __init__(self, map: "Map", *args: Any, **kwargs: Any) -> None:
+    def __init__(self, map: "Map", *args: t.Any, **kwargs: t.Any) -> None:
         super().__init__(map, *args, **kwargs)
         self.regex = args[0]
 
@@ -53,13 +38,13 @@ class PortConverter(BaseConverter):
 
     regex = r"(?::[0-9]{1,5})?"
 
-    def to_python(self, value: str) -> Any:
+    def to_python(self, value: str) -> t.Any:
         if value:
             return int(value[1:])
         return None
 
 
-class Dispatcher(Protocol[E]):
+class Dispatcher(t.Protocol[E]):
     """
     A Dispatcher is called when a URL route matches a request. The dispatcher is responsible for appropriately
     creating a Response from the incoming Request and the matching endpoint.
@@ -77,14 +62,14 @@ class Dispatcher(Protocol[E]):
         pass
 
 
-class _RuleAttributes(NamedTuple):
+class _RuleAttributes(t.NamedTuple):
     path: str
-    host: Optional[str] = (None,)
-    methods: Optional[Iterable[str]] = None
-    kwargs: Optional[Dict[str, Any]] = {}
+    host: t.Optional[str] = (None,)
+    methods: t.Optional[t.Iterable[str]] = None
+    kwargs: t.Optional[dict[str, t.Any]] = {}
 
 
-class _RouteEndpoint(Protocol):
+class _RouteEndpoint(t.Protocol):
     """
     An endpoint that encapsulates ``_RuleAttributes`` for the creation of a ``Rule`` inside a ``Router``.
     """
@@ -96,8 +81,8 @@ class _RouteEndpoint(Protocol):
 
 
 def route(
-    path: str, host: Optional[str] = None, methods: Optional[Iterable[str]] = None, **kwargs
-) -> Callable[[E], list[_RouteEndpoint]]:
+    path: str, host: t.Optional[str] = None, methods: t.Optional[t.Iterable[str]] = None, **kwargs
+) -> t.Callable[[E], list[_RouteEndpoint]]:
     """
     Decorator that indicates that the given function is a Router Rule.
 
@@ -128,7 +113,7 @@ def route(
 
 def call_endpoint(
     request: Request,
-    endpoint: Callable[[Request, RequestArguments], Response],
+    endpoint: t.Callable[[Request, RequestArguments], Response],
     args: RequestArguments,
 ) -> Response:
     """
@@ -165,13 +150,13 @@ def _clone_map_with_rules(old: Map) -> Map:
     return new
 
 
-class Router(Generic[E]):
+class Router(t.Generic[E]):
     """
     A Router is a wrapper around werkzeug's routing Map, that adds convenience methods and additional dispatching
     logic via the ``Dispatcher`` Protocol.
     """
 
-    default_converters: Dict[str, Type[BaseConverter]] = {
+    default_converters: dict[str, t.Type[BaseConverter]] = {
         "regex": RegexConverter,
         "port": PortConverter,
     }
@@ -180,7 +165,9 @@ class Router(Generic[E]):
     dispatcher: Dispatcher[E]
 
     def __init__(
-        self, dispatcher: Dispatcher[E] = None, converters: Mapping[str, Type[BaseConverter]] = None
+        self,
+        dispatcher: Dispatcher[E] = None,
+        converters: t.Mapping[str, t.Type[BaseConverter]] = None,
     ):
         if converters is None:
             converters = dict(self.default_converters)
@@ -201,8 +188,8 @@ class Router(Generic[E]):
         self,
         path: str,
         endpoint: E,
-        host: Optional[str] = None,
-        methods: Optional[Iterable[str]] = None,
+        host: t.Optional[str] = None,
+        methods: t.Optional[t.Iterable[str]] = None,
         **kwargs,
     ) -> Rule:
         """
@@ -222,7 +209,7 @@ class Router(Generic[E]):
         ...
 
     @overload
-    def add(self, fn: _RouteEndpoint) -> List[Rule]:
+    def add(self, fn: _RouteEndpoint) -> list[Rule]:
         """
         Adds a RouteEndpoint (typically a function decorated with ``@route``) as a rule to the router.
 
@@ -232,7 +219,7 @@ class Router(Generic[E]):
         ...
 
     @overload
-    def add(self, rule_factory: RuleFactory) -> List[Rule]:
+    def add(self, rule_factory: RuleFactory) -> list[Rule]:
         """
         Adds a ``Rule`` or the rules created by a ``RuleFactory`` to the given router. It passes the rules down to
         the underlying Werkzeug ``Map``, but also returns the created Rules.
@@ -243,7 +230,7 @@ class Router(Generic[E]):
         ...
 
     @overload
-    def add(self, obj: Any) -> List[Rule]:
+    def add(self, obj: t.Any) -> list[Rule]:
         """
         Scans the given object for members that can be used as a `RouteEndpoint` and adds them to the router.
 
@@ -253,7 +240,7 @@ class Router(Generic[E]):
         ...
 
     @overload
-    def add(self, routes: list[Union[_RouteEndpoint, RuleFactory, Any]]) -> List[Rule]:
+    def add(self, routes: list[t.Union[_RouteEndpoint, RuleFactory, t.Any]]) -> list[Rule]:
         """
         Add multiple routes or rules to the router at once.
 
@@ -262,7 +249,7 @@ class Router(Generic[E]):
         """
         ...
 
-    def add(self, *args, **kwargs) -> Union[Rule, List[Rule]]:
+    def add(self, *args, **kwargs) -> t.Union[Rule, list[Rule]]:
         """
         Creates a ``RuleAdapter`` and adds the generated rules to the router's Map.
         """
@@ -273,7 +260,7 @@ class Router(Generic[E]):
 
         return rules
 
-    def _add_rules(self, rule_factory: RuleFactory) -> List[Rule]:
+    def _add_rules(self, rule_factory: RuleFactory) -> list[Rule]:
         """
         Thread safe version of Werkzeug's ``Map.add``.
 
@@ -313,7 +300,7 @@ class Router(Generic[E]):
             new.add(rule)
             self.url_map = new
 
-    def remove(self, rules: Union[Rule, Iterable[Rule]]):
+    def remove(self, rules: t.Union[Rule, t.Iterable[Rule]]):
         """
         Removes a single Rule from the Router.
 
@@ -331,7 +318,7 @@ class Router(Generic[E]):
         else:
             self._remove_rules(rules)
 
-    def _remove_rules(self, rules: Iterable[Rule]):
+    def _remove_rules(self, rules: t.Iterable[Rule]):
         """
         Removes a set of Rules from the Router.
 
@@ -383,10 +370,10 @@ class Router(Generic[E]):
     def route(
         self,
         path: str,
-        host: Optional[str] = None,
-        methods: Optional[Iterable[str]] = None,
+        host: t.Optional[str] = None,
+        methods: t.Optional[t.Iterable[str]] = None,
         **kwargs,
-    ) -> Callable[[E], _RouteEndpoint]:
+    ) -> t.Callable[[E], _RouteEndpoint]:
         """
         Returns a ``route`` decorator and immediately adds it to the router instance. This effectively mimics flask's
         ``@app.route``.
@@ -461,8 +448,8 @@ class RuleAdapter(RuleFactory):
         self,
         path: str,
         endpoint: E,
-        host: Optional[str] = None,
-        methods: Optional[Iterable[str]] = None,
+        host: t.Optional[str] = None,
+        methods: t.Optional[t.Iterable[str]] = None,
         **kwargs,
     ):
         """
@@ -497,7 +484,7 @@ class RuleAdapter(RuleFactory):
         ...
 
     @overload
-    def __init__(self, obj: Any):
+    def __init__(self, obj: t.Any):
         """
         Scans the given object for members that can be used as a `RouteEndpoint` and adds them to the router.
 
@@ -506,7 +493,7 @@ class RuleAdapter(RuleFactory):
         ...
 
     @overload
-    def __init__(self, rules: list[Union[_RouteEndpoint, RuleFactory, Any]]):
+    def __init__(self, rules: list[t.Union[_RouteEndpoint, RuleFactory, t.Any]]):
         """Add multiple rules at once"""
         ...
 
@@ -532,7 +519,7 @@ class RuleAdapter(RuleFactory):
 
 
 class WithHost(RuleFactory):
-    def __init__(self, host: str, rules: Iterable[RuleFactory]) -> None:
+    def __init__(self, host: str, rules: t.Iterable[RuleFactory]) -> None:
         self.host = host
         self.rules = rules
 
@@ -545,7 +532,7 @@ class WithHost(RuleFactory):
 
 
 class RuleGroup(RuleFactory):
-    def __init__(self, rules: Iterable[RuleFactory]):
+    def __init__(self, rules: t.Iterable[RuleFactory]):
         self.rules = rules
 
     def get_rules(self, map: Map) -> t.Iterable[Rule]:
@@ -553,7 +540,7 @@ class RuleGroup(RuleFactory):
             yield from rule.get_rules(map)
 
 
-class _EndpointRule(RuleFactory, Generic[E]):
+class _EndpointRule(RuleFactory, t.Generic[E]):
     """
     Generates default werkzeug ``Rule`` object with the given attributes. Additionally, it makes sure that
     the generated rule always has a default host value, if the map has host matching enabled. Specifically,
@@ -566,8 +553,8 @@ class _EndpointRule(RuleFactory, Generic[E]):
         self,
         path: str,
         endpoint: E,
-        host: Optional[str] = None,
-        methods: Optional[Iterable[str]] = None,
+        host: t.Optional[str] = None,
+        methods: t.Optional[t.Iterable[str]] = None,
         **kwargs,
     ):
         self.path = path
