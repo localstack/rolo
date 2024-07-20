@@ -82,6 +82,31 @@ class TestPydanticHandlerDispatcher:
             "is_offer": None,
         }
 
+    def test_response_list(self):
+        router = Router(dispatcher=handler_dispatcher())
+
+        def handler(_request: Request) -> list[MyItem]:
+            return [
+                MyItem(name="rolo", price=420.69),
+                MyItem(name="twiks", price=1.23, is_offer=True),
+            ]
+
+        router.add("/items", handler)
+
+        request = Request("GET", "/items")
+        assert router.dispatch(request).get_json() == [
+            {
+                "name": "rolo",
+                "price": 420.69,
+                "is_offer": None,
+            },
+            {
+                "name": "twiks",
+                "price": 1.23,
+                "is_offer": True,
+            },
+        ]
+
     def test_request_arg_validation_error(self):
         router = Router(dispatcher=handler_dispatcher())
 
