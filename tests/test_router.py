@@ -1,5 +1,5 @@
 import threading
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import pytest
 import requests
@@ -8,7 +8,7 @@ from werkzeug.exceptions import MethodNotAllowed, NotFound
 from werkzeug.routing import RequestRedirect, Submount
 
 from rolo import Request, Response, Router
-from rolo.router import E, RequestArguments, RuleAdapter, WithHost, route
+from rolo.router import RequestArguments, RuleAdapter, WithHost, route
 
 
 def noop(*args, **kwargs):
@@ -26,13 +26,13 @@ def echo_params_json(request: Request, params: dict[str, str]):
 class RequestCollector:
     """Test dispatcher that collects requests into a list"""
 
-    requests: List[Tuple[Request, E, RequestArguments]]
+    requests: List[Tuple[Request, Callable, RequestArguments]]
 
     def __init__(self) -> None:
         super().__init__()
         self.requests = []
 
-    def __call__(self, request: Request, endpoint: E, args: RequestArguments) -> Response:
+    def __call__(self, request: Request, endpoint: Callable, args: RequestArguments) -> Response:
         self.requests.append((request, endpoint, args))
         return Response()
 

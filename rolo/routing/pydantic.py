@@ -3,10 +3,11 @@ import typing as t
 
 import pydantic
 
-from rolo import Response
-from rolo.dispatcher import Handler, HandlerDispatcher, ResultValue
 from rolo.request import Request
-from rolo.router import RequestArguments
+from rolo.response import Response
+
+from .handler import Handler, HandlerDispatcher, ResultValue
+from .router import RequestArguments
 
 
 def _get_model_argument(endpoint: Handler) -> t.Optional[tuple[str, t.Type[pydantic.BaseModel]]]:
