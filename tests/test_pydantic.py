@@ -1,5 +1,6 @@
 import pydantic
 import pytest
+from werkzeug.exceptions import BadRequest
 
 from rolo import Request, Router, dispatcher, resource
 from rolo.dispatcher import handler_dispatcher
@@ -125,6 +126,18 @@ class TestPydanticHandlerDispatcher:
                 "url": "https://errors.pydantic.dev/2.8/v/missing",
             }
         ]
+
+    def test_request_arg_invalid_json(self):
+        router = Router(dispatcher=handler_dispatcher())
+
+        def handler(_request: Request, item_id: int, item: MyItem) -> str:
+            return item.model_dump_json()
+
+        router.add("/items/<int:item_id>", handler)
+
+        request = Request("POST", "/items/123", body=b'{"}')
+        with pytest.raises(BadRequest):
+            assert router.dispatch(request)
 
     def test_missing_annotation(self):
         router = Router(dispatcher=handler_dispatcher())

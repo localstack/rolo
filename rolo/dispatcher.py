@@ -1,12 +1,11 @@
-import inspect
 import json
 import logging
-from typing import Any, Dict, Optional, Protocol, Type, Union
+import typing as t
 
 from werkzeug import Response as WerkzeugResponse
 
 try:
-    import pydantic
+    import pydantic  # noqa
 
     ENABLE_PYDANTIC = True
 except ImportError:
@@ -18,17 +17,17 @@ from .router import Dispatcher, RequestArguments
 
 LOG = logging.getLogger(__name__)
 
-ResultValue = Union[
+ResultValue = t.Union[
     WerkzeugResponse,
     str,
     bytes,
-    Dict[str, Any],  # a JSON dict
-    list[Any],
+    dict[str, t.Any],  # a JSON dict
+    list[t.Any],
 ]
 
 
 def _populate_response(
-    response: WerkzeugResponse, result: ResultValue, json_encoder: Type[json.JSONEncoder]
+    response: WerkzeugResponse, result: ResultValue, json_encoder: t.Type[json.JSONEncoder]
 ):
     if result is None:
         return response
@@ -44,7 +43,7 @@ def _populate_response(
     return response
 
 
-class Handler(Protocol):
+class Handler(t.Protocol):
     """
     A protocol used by a ``Router`` together with the dispatcher created with ``handler_dispatcher``. Endpoints added
     with this protocol take as first argument the HTTP request object, and then as keyword arguments the request
@@ -71,73 +70,55 @@ class Handler(Protocol):
         raise NotImplementedError
 
 
-def _try_parse_pydantic_request_body(request: Request, endpoint: Handler) -> Optional[dict]:
-    if not inspect.isfunction(endpoint) and not inspect.ismethod(endpoint):
-        # cannot yet dispatch to other callables (e.g. an object with a `__call__` method)
-        return None
+class HandlerDispatcher:
+    def __init__(self, json_encoder: t.Type[json.JSONEncoder] = None):
+        self.json_encoder = json_encoder
 
-    # finds the first pydantic.BaseModel in the list of annotations.
-    # ``def foo(request: Request, id: int, item: MyItem)`` would yield ``('my_item', MyItem)``
-    arg_name = None
-    arg_type = None
-    for k, v in endpoint.__annotations__.items():
-        if k == "return":
-            continue
-        if issubclass(v, pydantic.BaseModel):
-            arg_name = k
-            arg_type = v
-            break
+    def __call__(
+        self, request: Request, endpoint: t.Callable, request_args: RequestArguments
+    ) -> Response:
+        result = self.invoke_endpoint(request, endpoint, request_args)
+        return self.to_response(result)
 
-    if arg_type is None:
-        return None
+    def invoke_endpoint(
+        self,
+        request: Request,
+        endpoint: t.Callable,
+        request_args: RequestArguments,
+    ) -> t.Any:
+        return endpoint(request, **request_args)
 
-    if not request.content_length:
-        # forces a Validation error "Invalid JSON: EOF while parsing a value at line 1 column 0"
-        arg_type.model_validate_json(b"")
+    def to_response(self, value: ResultValue) -> Response:
+        if isinstance(value, WerkzeugResponse):
+            return value
 
-    # TODO: error handling
-    obj = request.get_json(force=True)
+        response = Response()
+        if value is None:
+            return response
 
-    # TODO: error handling
-    return {arg_name: arg_type.model_validate(obj)}
+        self.populate_response(response, value)
+        return response
+
+    def populate_response(self, response: Response, value: ResultValue):
+        if isinstance(value, (str, bytes, bytearray)):
+            response.data = value
+        elif isinstance(value, (dict, list)):
+            response.data = json.dumps(value, cls=self.json_encoder)
+            response.mimetype = "application/json"
+        else:
+            raise ValueError("unhandled result type %s", type(value))
 
 
-def handler_dispatcher(json_encoder: Type[json.JSONEncoder] = None) -> Dispatcher[Handler]:
+def handler_dispatcher(json_encoder: t.Type[json.JSONEncoder] = None) -> Dispatcher[Handler]:
     """
     Creates a Dispatcher that treats endpoints like callables of the ``Handler`` Protocol.
 
     :param json_encoder: optionally the json encoder class to use for translating responses
     :return: a new dispatcher
     """
+    if ENABLE_PYDANTIC:
+        from rolo.routing.pydantic import PydanticHandlerDispatcher
 
-    def _dispatch(request: Request, endpoint: Handler, args: RequestArguments) -> Response:
-        if ENABLE_PYDANTIC:
-            try:
-                kwargs = _try_parse_pydantic_request_body(request, endpoint) or {}
-                result = endpoint(request, **{**args, **kwargs})
-            except pydantic.ValidationError as e:
-                return Response(e.json(), mimetype="application/json", status=400)
+        return PydanticHandlerDispatcher(json_encoder)
 
-            if isinstance(result, pydantic.BaseModel):
-                result = result.model_dump()
-            if isinstance(result, (list, tuple)):
-                converted = []
-                for element in result:
-                    if isinstance(element, pydantic.BaseModel):
-                        converted.append(element.model_dump())
-                    else:
-                        converted.append(element)
-                result = converted
-
-        else:
-            result = endpoint(request, **args)
-
-        if isinstance(result, WerkzeugResponse):
-            return result
-
-        response = Response()
-        if result is not None:
-            _populate_response(response, result, json_encoder)
-        return response
-
-    return _dispatch
+    return HandlerDispatcher(json_encoder)
