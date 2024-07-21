@@ -24,7 +24,7 @@ from werkzeug import Request
 from werkzeug.serving import run_simple
 
 from rolo import Router, route
-from rolo.dispatcher import handler_dispatcher
+from rolo.routing import handler_dispatcher
 
 @route("/")
 def hello(request: Request):

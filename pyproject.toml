@@ -89,4 +89,5 @@ exclude_lines = [
     "raise NotImplemented.",
     "return NotImplemented",
     "def __repr__",
+    "__all__",
 ]
