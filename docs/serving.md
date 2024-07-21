@@ -12,7 +12,7 @@ If you only need a `Router` instance to serve your application, you can convert 
 
 ```python
 from rolo import Router, route
-from rolo.dispatcher import handler_dispatcher
+from rolo.routing import handler_dispatcher
 
 @route("/")
 def index(request):

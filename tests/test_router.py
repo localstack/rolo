@@ -8,7 +8,7 @@ from werkzeug.exceptions import MethodNotAllowed, NotFound
 from werkzeug.routing import RequestRedirect, Submount
 
 from rolo import Request, Response, Router
-from rolo.router import RequestArguments, RuleAdapter, WithHost, route
+from rolo.routing import RequestArguments, RuleAdapter, WithHost, route
 
 
 def noop(*args, **kwargs):

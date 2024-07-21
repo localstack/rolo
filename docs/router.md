@@ -44,7 +44,7 @@ The "handler dispatcher" can transform functions into more Flask or FastAPI-like
 
 ```python
 from rolo import Router, route
-from rolo.dispatcher import handler_dispatcher
+from rolo.routing import handler_dispatcher
 
 from werkzeug import Request
 from werkzeug.serving import run_simple
@@ -76,7 +76,7 @@ The above example can also be written as follows
 
 ```python
 from rolo import Router, route, Request
-from rolo.dispatcher import handler_dispatcher
+from rolo.routing import handler_dispatcher
 
 class UserResource:
 

@@ -4,7 +4,7 @@ import pytest
 from werkzeug.exceptions import NotFound
 
 from rolo import Request, Response, Router
-from rolo.dispatcher import handler_dispatcher
+from rolo.routing import handler_dispatcher
 
 
 class TestHandlerDispatcher:

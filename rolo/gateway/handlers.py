@@ -5,7 +5,7 @@ from werkzeug.datastructures import Headers
 from werkzeug.exceptions import HTTPException, NotFound
 
 from rolo.response import Response
-from rolo.router import Router
+from rolo.routing import Router
 
 from .chain import HandlerChain, RequestContext
 
