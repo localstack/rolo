@@ -27,23 +27,6 @@ ResultValue = t.Union[
 ]
 
 
-def _populate_response(
-    response: WerkzeugResponse, result: ResultValue, json_encoder: t.Type[json.JSONEncoder]
-):
-    if result is None:
-        return response
-
-    elif isinstance(result, (str, bytes, bytearray)):
-        response.data = result
-    elif isinstance(result, (dict, list)):
-        response.data = json.dumps(result, cls=json_encoder)
-        response.mimetype = "application/json"
-    else:
-        raise ValueError("unhandled result type %s", type(result))
-
-    return response
-
-
 class Handler(t.Protocol):
     """
     A protocol used by a ``Router`` together with the dispatcher created with ``handler_dispatcher``. Endpoints added
