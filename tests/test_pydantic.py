@@ -1,4 +1,4 @@
-from typing import TypedDict, Unpack
+from typing import TypedDict
 
 import pydantic
 import pytest
@@ -209,6 +209,11 @@ class TestPydanticHandlerDispatcher:
         assert router.dispatch(request).data == b"ok"
 
     def test_with_typed_dict(self):
+        try:
+            from typing import Unpack
+        except ImportError:
+            pytest.skip("This test only works with Python >=3.11")
+
         router = Router(dispatcher=handler_dispatcher())
 
         class Test(TypedDict, total=False):
