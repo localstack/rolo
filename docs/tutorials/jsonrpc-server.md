@@ -61,6 +61,8 @@ def parse_request(chain: HandlerChain, context: RequestContext, response: Respon
 The handler simply parses the request body as JSON.
 This is easy since the Werkzeug `Request` object
 already [supports this](https://werkzeug.palletsprojects.com/en/latest/wrappers/#werkzeug.wrappers.Request.get_json).
+To pass data down to other handlers, we use the `ReqestContext` object, which can hold arbtirary data.
+You can also add your own custom request context object if you want (see [Gateway](../gateway.md)).
 We initialize the request context with an empty request ID, since that is later often referred back to.
 It then creates a `RpcRequest` object that is attached to the `RequestContext` and can be used later in the chain.
 
