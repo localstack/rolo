@@ -26,6 +26,8 @@ def _get_model_argument(endpoint: Handler) -> t.Optional[tuple[str, t.Type[pydan
     for arg_name, arg_type in endpoint.__annotations__.items():
         if arg_name in ("self", "return"):
             continue
+        if not inspect.isclass(arg_type):
+            continue
         if issubclass(arg_type, pydantic.BaseModel):
             return arg_name, arg_type
 

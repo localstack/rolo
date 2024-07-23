@@ -1,3 +1,5 @@
+from typing import TypedDict
+
 import pydantic
 import pytest
 from werkzeug.exceptions import BadRequest
@@ -194,3 +196,38 @@ class TestPydanticHandlerDispatcher:
             "item": {"is_offer": None, "name": "rolo", "price": 420.69},
             "item_id": 123,
         }
+
+    def test_with_generic_type_alias(self):
+        router = Router(dispatcher=handler_dispatcher())
+
+        def handler(request: Request, matrix: dict[str, str] = None):
+            return "ok"
+
+        router.add("/", endpoint=handler)
+
+        request = Request("GET", "/")
+        assert router.dispatch(request).data == b"ok"
+
+    def test_with_typed_dict(self):
+        try:
+            from typing import Unpack
+        except ImportError:
+            pytest.skip("This test only works with Python >=3.11")
+
+        router = Router(dispatcher=handler_dispatcher())
+
+        class Test(TypedDict, total=False):
+            path: str
+            random_value: str
+
+        def func(request: Request, **kwargs: Unpack[Test]):
+            return f"path={kwargs.get('path')},random_value={kwargs.get('random_value')}"
+
+        router.add(
+            "/",
+            endpoint=func,
+            defaults={"path": "", "random_value": "dev"},
+        )
+
+        request = Request("GET", "/")
+        assert router.dispatch(request).data == b"path=,random_value=dev"
