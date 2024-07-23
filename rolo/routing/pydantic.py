@@ -28,8 +28,12 @@ def _get_model_argument(endpoint: Handler) -> t.Optional[tuple[str, t.Type[pydan
             continue
         if not inspect.isclass(arg_type):
             continue
-        if issubclass(arg_type, pydantic.BaseModel):
-            return arg_name, arg_type
+        try:
+            if issubclass(arg_type, pydantic.BaseModel):
+                return arg_name, arg_type
+        except TypeError:
+            # FIXME: this is needed for Python 3.10 support
+            continue
 
     return None
 
