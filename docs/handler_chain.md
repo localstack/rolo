@@ -29,6 +29,12 @@ If an exception occurs during the execution of request handlers, the chain by de
 then runs each exception handler, and finally runs the response handlers.
 Exceptions that happen during the execution of response or exception handlers are logged but do not modify the control flow of the chain.
 
+## Request Context
+
+The `RequestContext` object holds the HTTP `Request` object in `context.request`, as well as any arbitrary data you would like to pass down to other handlers.
+It's a universal attribute store, so you can simply call: `context.myattr = "foo"` to set a value.
+You can add type hints for your request context, see [gateway](gateway.md).
+
 ## Handlers
 
 Request handlers, response handlers, and finalizers need to satisfy the `Handler` protocol:

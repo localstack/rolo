@@ -40,3 +40,10 @@ websockets
 serving
 ```
 
+```{toctree}
+:caption: Tutorials
+:maxdepth: 1
+
+tutorials/jsonrpc-server
+```
+
