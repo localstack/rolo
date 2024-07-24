@@ -1,3 +1,13 @@
+# Tutorial: REST API with SQLModel
+
+In this tutorial, we will explore how rolo can be used to build REST API servers with concepts you are familiar with from Flask or FastAPI,
+and adding middleware using the [handler chain](../handler_chain.md).
+
+## Introduction
+
+TODO
+
+## Defining the SQLModel
 
 ```python
 from typing import Optional
@@ -10,6 +20,8 @@ class Hero(SQLModel, table=True):
     secret_name: str
     age: Optional[int] = None
 ```
+
+## Defining the REST API
 
 ```python
 from rolo import Request, route
@@ -29,8 +41,12 @@ class HeroResource:
         return
 ```
 
+## Using SQLModel with rolo
+
+
+
 ```python
-from sqlalchemy import Engine
+from sqlalchemy.engine import Engine
 
 class HeroResource:
     db_engine: Engine
@@ -44,7 +60,7 @@ class HeroResource:
 ```python
 from typing import Optional
 
-from sqlalchemy import Engine
+from sqlalchemy.engine import Engine
 from sqlmodel import Field, SQLModel, Session, select
 
 from rolo import Request, Response, route
@@ -93,8 +109,19 @@ class HeroResource:
 
 ## Add simple authorization middleware
 
+Next, we're going to add a simple authorization middleware that uses the Bearer token [HTTP authentication scheme](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication).
+The basic idea is that there is an authorization database, which holds a set of valid auth tokens.
+The clients sends the auth token through the `Authorization: Bearer <token>` header.
+For every request, we want to check whether the header is present and check the token against the database.
+If not, then we want to respond with a `401 Unauthorized` error.
+To that end, we will introduce a [handler chain](../handler_chain.md) handler.
 
 ### Authorization handler
+
+Here is the example handler code.
+Notice how you can use the [`authorization`](https://werkzeug.palletsprojects.com/en/2.3.x/wrappers/#werkzeug.wrappers.Request.authorization) attribute of the werkzeug request object, to access the header directly.
+You are working with the [`Authorization`](https://werkzeug.palletsprojects.com/en/2.3.x/datastructures/#werkzeug.datastructures.Authorization) data structure.
+Next, you can raise werkzeug `Unauthorized` exceptions, which we will then handle with the builtin `WerkzeugExceptionHandler`.
 
 ```python
 from werkzeug.exceptions import Unauthorized
@@ -122,8 +149,8 @@ class AuthorizationHandler:
 
 ### Handler chain
 
-Since we are using werkzeug exceptions, we will also need the `WerkzeugExceptionHandler` to serialize them correctly.
-Let's put together an appropriate handler chain:
+Let's put together an appropriate handler chain using both our `AuthorizationHandler`, and the builtin handlers `RouterHandler` and `WerkzeugExceptionHandler`,
+as well as all SQLModel resources we need:
 
 ```python
 def main():
@@ -147,13 +174,18 @@ def main():
     )
 ```
 
+TODO: breakdown
+
 
 ## Complete program
+
+Here's the complete program:
 
 ```python
 from typing import Optional
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlmodel import Field, Session, SQLModel, select
 from werkzeug import run_simple
 from werkzeug.exceptions import Unauthorized
@@ -246,3 +278,7 @@ def main():
 if __name__ == '__main__':
     main()
 ```
+
+## Conclusion
+
+TODO
