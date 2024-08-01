@@ -73,13 +73,16 @@ class SimpleRequestsClient(HttpClient):
 
         return get_raw_base_url(request)
 
-    def request(self, request: Request, server: str | None = None) -> Response:
+    def request(
+        self, request: Request, server: str | None = None, allow_redirects=True
+    ) -> Response:
         """
         Very naive implementation to make the given HTTP request using the requests library, i.e., process the request
         as a client.
 
         :param request: the request to perform
         :param server: the URL to send the request to, which defaults to the host component of the original Request.
+        :param allow_redirects: allow the request to follow redirects
         :return: the response.
         """
 
@@ -106,6 +109,7 @@ class SimpleRequestsClient(HttpClient):
             headers=headers,
             data=restore_payload(request),
             stream=True,
+            allow_redirects=allow_redirects,
         )
 
         if request.method == "HEAD":
