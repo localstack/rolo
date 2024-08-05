@@ -56,9 +56,11 @@ class _VerifyRespectingSession(requests.Session):
 
 class SimpleRequestsClient(HttpClient):
     session: requests.Session
+    follow_redirects: bool
 
-    def __init__(self, session: requests.Session = None):
+    def __init__(self, session: requests.Session = None, follow_redirects: bool = True):
         self.session = session or _VerifyRespectingSession()
+        self.follow_redirects = follow_redirects
 
     @staticmethod
     def _get_destination_url(request: Request, server: str | None = None) -> str:
@@ -73,9 +75,7 @@ class SimpleRequestsClient(HttpClient):
 
         return get_raw_base_url(request)
 
-    def request(
-        self, request: Request, server: str | None = None, allow_redirects=True
-    ) -> Response:
+    def request(self, request: Request, server: str | None = None) -> Response:
         """
         Very naive implementation to make the given HTTP request using the requests library, i.e., process the request
         as a client.
@@ -109,7 +109,7 @@ class SimpleRequestsClient(HttpClient):
             headers=headers,
             data=restore_payload(request),
             stream=True,
-            allow_redirects=allow_redirects,
+            allow_redirects=self.follow_redirects,
         )
 
         if request.method == "HEAD":
