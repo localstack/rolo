@@ -56,9 +56,11 @@ class _VerifyRespectingSession(requests.Session):
 
 class SimpleRequestsClient(HttpClient):
     session: requests.Session
+    follow_redirects: bool
 
-    def __init__(self, session: requests.Session = None):
+    def __init__(self, session: requests.Session = None, follow_redirects: bool = True):
         self.session = session or _VerifyRespectingSession()
+        self.follow_redirects = follow_redirects
 
     @staticmethod
     def _get_destination_url(request: Request, server: str | None = None) -> str:
@@ -80,6 +82,7 @@ class SimpleRequestsClient(HttpClient):
 
         :param request: the request to perform
         :param server: the URL to send the request to, which defaults to the host component of the original Request.
+        :param allow_redirects: allow the request to follow redirects
         :return: the response.
         """
 
@@ -106,6 +109,7 @@ class SimpleRequestsClient(HttpClient):
             headers=headers,
             data=restore_payload(request),
             stream=True,
+            allow_redirects=self.follow_redirects,
         )
 
         if request.method == "HEAD":
