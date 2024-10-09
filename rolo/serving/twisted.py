@@ -62,7 +62,7 @@ def update_wsgi_environment(environ: "WSGIEnvironment", request: TwistedRequest)
     # TODO: check if twisted input streams are really properly terminated
     # this is needed for streaming requests
     environ["wsgi.input_terminated"] = True
-
+    print(f"update_wsgi_environment {environ=}")
     # create RAW_URI and REQUEST_URI
     environ["REQUEST_URI"] = request.uri.decode("utf-8")
     environ["RAW_URI"] = request.uri.decode("utf-8")
@@ -164,7 +164,6 @@ class HeaderPreservingHTTPChannel(HTTPChannel):
     def headerReceived(self, line):
         if not super().headerReceived(line):
             return False
-
         # remember casing of headers for requests
         header, data = line.split(b":", 1)
         request: TwistedRequestAdapter = self.requests[-1]
