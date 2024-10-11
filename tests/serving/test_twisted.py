@@ -1,10 +1,8 @@
 import io
-import time
 
 import requests
-import urllib3
 
-from rolo import Request, Router, route, Response
+from rolo import Request, Response, Router, route
 from rolo.dispatcher import handler_dispatcher
 from rolo.gateway import Gateway
 from rolo.gateway.handlers import RouterHandler
@@ -29,6 +27,7 @@ def test_large_file_upload(serve_twisted_gateway):
 
 def test_full_absolute_form_uri(serve_twisted_gateway):
     import http.client
+
     router = Router(handler_dispatcher())
 
     @route("/hello", methods=["GET"])
@@ -48,7 +47,7 @@ def test_full_absolute_form_uri(serve_twisted_gateway):
     # This is what is sent:
     # send: b'GET http://localhost:<port>/hello HTTP/1.1\r\nHost: localhost:<port>\r\nAccept-Encoding: identity\r\n\r\n'
     # note the full URI in the HTTP request
-    conn.request("GET", url=f"{host}/hello",)
+    conn.request("GET", url=f"{host}/hello")
     response = conn.getresponse()
 
     assert response.status == 200
