@@ -33,8 +33,9 @@ def test_full_absolute_form_uri(serve_twisted_gateway):
 
     @route("/hello", methods=["GET"])
     def hello(request: Request):
-        if not request.path == "/hello":
+        if not request.path == "/hello" or not request.environ["RAW_URI"].startswith("http"):
             return Response(status=500)
+
         return "ok"
 
     router.add(hello)
