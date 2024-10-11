@@ -36,7 +36,6 @@ class WsgiGateway:
             environ.get("HTTP_HOST"),
             environ.get("RAW_URI"),
         )
-        print(f"{environ=}")
         request = Request(environ)
 
         raw_headers = environ.get("rolo.headers") or environ.get("asgi.headers")
