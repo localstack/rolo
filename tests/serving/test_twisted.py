@@ -1,5 +1,5 @@
+import http.client
 import io
-import sys
 
 import requests
 
@@ -27,8 +27,6 @@ def test_large_file_upload(serve_twisted_gateway):
 
 
 def test_full_absolute_form_uri(serve_twisted_gateway):
-    import http.client
-
     router = Router(handler_dispatcher())
 
     @route("/hello", methods=["GET"])
@@ -44,11 +42,7 @@ def test_full_absolute_form_uri(serve_twisted_gateway):
     server = serve_twisted_gateway(gateway)
     host = server.url
 
-    if sys.platform.startswith("darwin"):
-        # macOS doesn't like `localhost` and has trouble resolving it
-        conn = http.client.HTTPConnection("", port=server.port)
-    else:
-        conn = http.client.HTTPConnection(host)
+    conn = http.client.HTTPConnection(host="127.0.0.1", port=server.port)
 
     # This is what is sent:
     # send: b'GET http://localhost:<port>/hello HTTP/1.1\r\nHost: localhost:<port>\r\nAccept-Encoding: identity\r\n\r\n'
