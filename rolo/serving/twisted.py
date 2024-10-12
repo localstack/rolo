@@ -64,17 +64,17 @@ def update_wsgi_environment(environ: "WSGIEnvironment", request: TwistedRequest)
     environ["wsgi.input_terminated"] = True
 
     if not request.path.startswith(b"/"):
-        # TODO: this is a bug in Twisted: when the HTTP request contains an full absolute-form URI instead of just the
-        #  path (when a request is proxied), the `PATH_INFO` is wrong, as Twisted will use the full URI as a path.
+        # TODO: this is a bug in Twisted: when the HTTP request contains a full absolute-form URI (when a request is
+        #  proxied) instead of a relative path, the `PATH_INFO` is wrong, as Twisted will use the full URI as the path.
         #  `twisted.web.wsgi` will even replace the first char with a slash, leading to something looking like
         #  '/ttp://sns.eu-central-1.amazonaws.com/'
         # See RFC7230: https://tools.ietf.org/html/rfc7230#section-5.3.2
-        # When making a request to a proxy, other than a CONNECT or server-wide OPTIONS request (as detailed below),
-        # a client MUST send the target URI in absolute-form as the request-target.... An example absolute-form
-        # of request-line would be:
-        # GET http://www.example.org/pub/WWW/TheProject.html HTTP/1.1
+        # > When making a request to a proxy, other than a CONNECT or server-wide OPTIONS request (as detailed below),
+        # > a client MUST send the target URI in absolute-form as the request-target.... An example absolute-form
+        # > of request-line would be:
+        # > GET http://www.example.org/pub/WWW/TheProject.html HTTP/1.1
         #
-        # we need to fix upstream, but this is a global workaround for now
+        # we need to fix it upstream, but this is a global workaround for now
         environ["PATH_INFO"] = urlparse(request.path).path.decode("utf-8")
 
     # create RAW_URI and REQUEST_URI

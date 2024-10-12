@@ -1,9 +1,10 @@
 import http.client
 import io
+import json
 
 import requests
 
-from rolo import Request, Response, Router, route
+from rolo import Request, Router, route
 from rolo.dispatcher import handler_dispatcher
 from rolo.gateway import Gateway
 from rolo.gateway.handlers import RouterHandler
@@ -31,10 +32,7 @@ def test_full_absolute_form_uri(serve_twisted_gateway):
 
     @route("/hello", methods=["GET"])
     def hello(request: Request):
-        if not request.path == "/hello" or not request.environ["RAW_URI"].startswith("http"):
-            return Response(status=500)
-
-        return "ok"
+        return {"path": request.path, "raw_uri": request.environ["RAW_URI"]}
 
     router.add(hello)
 
@@ -51,3 +49,6 @@ def test_full_absolute_form_uri(serve_twisted_gateway):
     response = conn.getresponse()
 
     assert response.status == 200
+    response_data = json.loads(response.read())
+    assert response_data["path"] == "/hello"
+    assert response_data["raw_uri"].startswith("http")
