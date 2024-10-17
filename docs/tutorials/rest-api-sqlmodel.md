@@ -1,13 +1,16 @@
 # Tutorial: REST API with SQLModel
 
-In this tutorial, we will explore how rolo can be used to build REST API servers with concepts you are familiar with from Flask or FastAPI,
+In this tutorial, we will explore how rolo can be used to build RESTful API servers with a database backend, using concepts you are familiar with from Flask or FastAPI,
 and adding middleware using the [handler chain](../handler_chain.md).
 
 ## Introduction
 
-TODO
+A bread-and-butter use case of web frameworks is implementing [resources](https://restful-api-design.readthedocs.io/en/latest/resources.html) using RESTful API design.
+Mapping web API concepts (like a `Request` object) to an internal resource model (like a `Hero` in )
+ 
 
 ## Defining the SQLModel
+
 
 ```python
 from typing import Optional
@@ -22,6 +25,10 @@ class Hero(SQLModel, table=True):
 ```
 
 ## Defining the REST API
+
+You can declare the body using pydantic BaseModel types.
+Adding the attribute `hero: Hero` into your route signature tells rolo that this method accepts `application/json` payloads that are serialized into the `Hero` class using pydantic.
+Since `SQLModel` is also a `pydantic.BaseModel`, we can use our `Hero` object directly.
 
 ```python
 from rolo import Request, route
@@ -42,7 +49,6 @@ class HeroResource:
 ```
 
 ## Using SQLModel with rolo
-
 
 
 ```python
