@@ -7,7 +7,7 @@ name = "rolo"
 authors = [
     { name = "LocalStack Contributors", email = "info@localstack.cloud" }
 ]
-version = "0.7.1"
+version = "0.7.2"
 description = "A Python framework for building HTTP-based server applications"
 dependencies = [
     "requests>=2.20",
@@ -38,7 +38,7 @@ dev = [
     "websocket-client>=1.7.0",
     "coverage[toml]>=5.0.0",
     "coveralls>=3.3",
-    "twisted>=24",
+    "localstack-twisted",
     "ruff==0.1.0"
 ]
 docs = [

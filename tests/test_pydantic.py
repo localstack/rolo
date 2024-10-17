@@ -8,6 +8,8 @@ from rolo import Request, Router, resource
 from rolo.routing import handler as routing_handler
 from rolo.routing import handler_dispatcher
 
+pydantic_version = pydantic.version.version_short()
+
 
 class MyItem(pydantic.BaseModel):
     name: str
@@ -67,7 +69,7 @@ class TestPydanticHandlerDispatcher:
                 "msg": "Invalid JSON: EOF while parsing a value at line 1 column 0",
                 "ctx": {"error": "EOF while parsing a value at line 1 column 0"},
                 "input": "",
-                "url": "https://errors.pydantic.dev/2.8/v/json_invalid",
+                "url": f"https://errors.pydantic.dev/{pydantic_version}/v/json_invalid",
             }
         ]
 
@@ -126,7 +128,7 @@ class TestPydanticHandlerDispatcher:
                 "loc": ["price"],
                 "msg": "Field required",
                 "input": {"name": "rolo"},
-                "url": "https://errors.pydantic.dev/2.8/v/missing",
+                "url": f"https://errors.pydantic.dev/{pydantic_version}/v/missing",
             }
         ]
 

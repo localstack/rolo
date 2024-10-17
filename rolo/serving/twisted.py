@@ -10,7 +10,7 @@ from twisted.internet import reactor
 from twisted.internet.protocol import Protocol
 from twisted.protocols.policies import ProtocolWrapper
 from twisted.python.components import proxyForInterface
-from twisted.web.http import HTTPChannel, _GenericHTTPChannelProtocol
+from twisted.web.http import HTTPChannel, _GenericHTTPChannelProtocol, urlparse
 from twisted.web.http_headers import Headers as TwistedHeaders
 from twisted.web.resource import IResource
 from twisted.web.server import NOT_DONE_YET, Request, Site
@@ -62,6 +62,20 @@ def update_wsgi_environment(environ: "WSGIEnvironment", request: TwistedRequest)
     # TODO: check if twisted input streams are really properly terminated
     # this is needed for streaming requests
     environ["wsgi.input_terminated"] = True
+
+    if not request.path.startswith(b"/"):
+        # TODO: this is a bug in Twisted: when the HTTP request contains a full absolute-form URI (when a request is
+        #  proxied) instead of a relative path, the `PATH_INFO` is wrong, as Twisted will use the full URI as the path.
+        #  `twisted.web.wsgi` will even replace the first char with a slash, leading to something looking like
+        #  '/ttp://sns.eu-central-1.amazonaws.com/'
+        # See RFC7230: https://tools.ietf.org/html/rfc7230#section-5.3.2
+        # > When making a request to a proxy, other than a CONNECT or server-wide OPTIONS request (as detailed below),
+        # > a client MUST send the target URI in absolute-form as the request-target.... An example absolute-form
+        # > of request-line would be:
+        # > GET http://www.example.org/pub/WWW/TheProject.html HTTP/1.1
+        #
+        # we need to fix it upstream, but this is a global workaround for now
+        environ["PATH_INFO"] = urlparse(request.path).path.decode("utf-8")
 
     # create RAW_URI and REQUEST_URI
     environ["REQUEST_URI"] = request.uri.decode("utf-8")
@@ -164,7 +178,6 @@ class HeaderPreservingHTTPChannel(HTTPChannel):
     def headerReceived(self, line):
         if not super().headerReceived(line):
             return False
-
         # remember casing of headers for requests
         header, data = line.split(b":", 1)
         request: TwistedRequestAdapter = self.requests[-1]
