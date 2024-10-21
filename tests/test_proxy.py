@@ -1,3 +1,4 @@
+import gzip
 import json
 
 import pytest
@@ -273,6 +274,59 @@ class TestProxy:
             assert "Transfer-Encoding" not in response.headers
 
         assert response.data.decode() == body
+
+
+    @pytest.mark.parametrize(
+        "chunked,gzipped",
+        [
+            (False, False),
+            (False, True),
+            (True, False),
+            (True, True),
+        ]
+    )
+    def test_proxy_for_transfer_encoding_chunked_and_gzip(
+        self,
+        httpserver: HTTPServer,
+        chunked,
+        gzipped,
+    ):
+        body = b"enough-for-content-length"
+        if gzipped:
+            body = gzip.compress(body, mtime=0)
+
+        def _handler(_request: Request) -> Response:
+            # if the response is chunked, return a generator instead, which will return `Transfer-Encoding: chunked`
+            headers = {}
+            _body = body
+            if gzipped:
+                headers["Transfer-Encoding"] = "gzip"
+
+            if chunked:
+                _body = (chr(c).encode('latin-1') for c in body)
+
+            return Response(_body, status=200, headers=headers)
+
+        httpserver.expect_request("").respond_with_handler(_handler)
+
+        proxy = Proxy(httpserver.url_for("/").lstrip("/"))
+
+        request = Request(path="/", method="GET", headers={"Host": "127.0.0.1:80"})
+
+        response = proxy.request(request)
+
+        if gzipped:
+            assert response.headers["Transfer-Encoding"] == "gzip"
+
+        if chunked:
+            assert "Content-Length" not in response.headers
+            assert "chunked" not in response.headers.get("Transfer-Encoding", "")
+        else:
+            assert response.headers["Content-Length"] == str(len(body))
+            if not gzipped:
+                assert "Transfer-Encoding" not in response.headers
+
+        assert response.data == body
 
 
 @pytest.mark.parametrize("consume_data", [True, False])
