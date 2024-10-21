@@ -181,6 +181,36 @@ class TestPathForwarder:
             "query": "%E4%B8%8A%E6%B5%B7%2B%E4%B8%AD%E5%9C%8B=%E4%B8%8A%E6%B5%B7%2B%E4%B8%AD%E5%9C%8B",
         }
 
+    @pytest.mark.parametrize("chunked", [True, False])
+    def test_proxy_handler_transfer_encoding(self, router_server, httpserver: HTTPServer, chunked):
+        router, proxy = router_server
+        backend = httpserver
+        body = "enough-for-content-length"
+
+        def _handler(_: WerkzeugRequest):
+            # if the response is chunked, return a generator instead, which will return `Transfer-Encoding: chunked`
+            if chunked:
+                _body = (c for c in body)
+            else:
+                _body = body
+
+            return Response(_body, status=200)
+
+        backend.expect_request("").respond_with_handler(_handler)
+
+        router.add("/", ProxyHandler(backend.url_for("/")))
+
+        response = requests.get(proxy.url)
+
+        if chunked:
+            assert response.headers["Transfer-Encoding"] == "chunked"
+            assert "Content-Length" not in response.headers
+        else:
+            assert response.headers["Content-Length"] == str(len(body))
+            assert "Transfer-Encoding" not in response.headers
+
+        assert response.text == body
+
 
 class TestProxy:
     def test_proxy_with_custom_client(self, httpserver: HTTPServer):
@@ -217,12 +247,14 @@ class TestProxy:
     ):
         body = "enough-for-content-length"
 
-        def _handler(_: WerkzeugRequest):
-            headers = (
-                {"Content-Length": len(body)} if not chunked else {"Transfer-Encoding": "chunked"}
-            )
+        def _handler(_request: Request) -> Response:
+            # if the response is chunked, return a generator instead, which will return `Transfer-Encoding: chunked`
+            if chunked:
+                _body = (c for c in body)
+            else:
+                _body = body
 
-            return Response(body, headers=headers)
+            return Response(_body, status=200)
 
         httpserver.expect_request("").respond_with_handler(_handler)
 
@@ -233,11 +265,14 @@ class TestProxy:
         response = proxy.request(request)
 
         if chunked:
-            assert response.headers["Transfer-Encoding"] == "chunked"
+            # the proxy should not return a Transfer-Encoding, as this is something the webserver should set
+            assert "Transfer-Encoding" not in response.headers
             assert "Content-Length" not in response.headers
         else:
             assert response.headers["Content-Length"] == str(len(body))
             assert "Transfer-Encoding" not in response.headers
+
+        assert response.data.decode() == body
 
 
 @pytest.mark.parametrize("consume_data", [True, False])

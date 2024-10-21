@@ -126,6 +126,13 @@ class SimpleRequestsClient(HttpClient):
         response_headers = Headers(dict(response.headers))
         if "chunked" in response_headers.get("Transfer-Encoding", ""):
             response_headers.pop("Content-Length", None)
+            # We should not set `Transfer-Encoding` in a Response, because it is the responsibility of the webserver
+            # to do so, if there are no Content-Length. LocalStack is handling gzip behavior, so we keep that one.
+            transfer_encoding = [
+                v for v in response_headers.getlist("Transfer-Encoding")
+                if v.lower() != "chunked"
+            ]
+            response_headers.setlist("Transfer-Encoding", transfer_encoding)
 
         final_response = Response(
             response=(chunk for chunk in response.raw.stream(1024, decode_content=False)),
