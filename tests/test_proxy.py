@@ -306,11 +306,11 @@ class TestProxy:
 
             return Response(_body, status=200, headers=headers)
 
-        httpserver.expect_request("").respond_with_handler(_handler)
+        httpserver.expect_request("/proxy").respond_with_handler(_handler)
 
         proxy = Proxy(httpserver.url_for("/").lstrip("/"))
 
-        request = Request(path="/", method="GET", headers={"Host": "127.0.0.1:80"})
+        request = Request(path="/proxy", method="GET", headers={"Host": "127.0.0.1:80"})
 
         response = proxy.request(request)
 
