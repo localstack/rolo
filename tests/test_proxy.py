@@ -275,7 +275,6 @@ class TestProxy:
 
         assert response.data.decode() == body
 
-
     @pytest.mark.parametrize(
         "chunked,gzipped",
         [
@@ -283,7 +282,7 @@ class TestProxy:
             (False, True),
             (True, False),
             (True, True),
-        ]
+        ],
     )
     def test_proxy_for_transfer_encoding_chunked_and_gzip(
         self,
@@ -303,7 +302,7 @@ class TestProxy:
                 headers["Transfer-Encoding"] = "gzip"
 
             if chunked:
-                _body = (chr(c).encode('latin-1') for c in body)
+                _body = (chr(c).encode("latin-1") for c in body)
 
             return Response(_body, status=200, headers=headers)
 
