@@ -124,8 +124,16 @@ class SimpleRequestsClient(HttpClient):
             return final_response
 
         response_headers = Headers(dict(response.headers))
-        if "chunked" in response_headers.get("Transfer-Encoding", ""):
+        if "chunked" in (transfer_encoding := response_headers.get("Transfer-Encoding", "")):
             response_headers.pop("Content-Length", None)
+            # We should not set `Transfer-Encoding` in a Response, because it is the responsibility of the webserver
+            # to do so, if there are no Content-Length. However, gzip behavior is more related to the actual content of
+            # the response, so we keep that one.
+            transfer_encoding_values = [v.strip() for v in transfer_encoding.split(",")]
+            transfer_encoding_no_chunked = [
+                v for v in transfer_encoding_values if v.lower() != "chunked"
+            ]
+            response_headers.setlist("Transfer-Encoding", transfer_encoding_no_chunked)
 
         final_response = Response(
             response=(chunk for chunk in response.raw.stream(1024, decode_content=False)),
