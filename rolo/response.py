@@ -10,6 +10,33 @@ if t.TYPE_CHECKING:
     from types import ModuleType
 
 
+class _StreamIterableWrapper(t.Iterable[bytes]):
+    """
+    This can wrap an IO[bytes] stream to return an Iterable with a default chunk size of 65536 bytes
+    """
+
+    def __init__(self, stream: t.IO[bytes], chunk_size: int = 65536):
+        self.stream = stream
+        self._chunk_size = chunk_size
+
+    def __iter__(self) -> t.Iterator[bytes]:
+        """
+        When passing a stream back to the WSGI server, it will often iterate only 1 byte at a time. Using this chunking
+        mechanism allows us to bypass this issue.
+        The caller needs to call `close()` to properly close the file descriptor
+        :return:
+        """
+        while data := self.stream.read(self._chunk_size):
+            if not data:
+                return b""
+
+            yield data
+
+    def close(self):
+        if hasattr(self.stream, "close"):
+            self.stream.close()
+
+
 class Response(WerkzeugResponse):
     """
     An HTTP Response object, which simply extends werkzeug's Response object with a few convenience methods.
@@ -100,4 +127,4 @@ class Response(WerkzeugResponse):
         mimetype = mimetypes.guess_type(resource.name)
         mimetype = mimetype[0] if mimetype and mimetype[0] else "application/octet-stream"
 
-        return cls(resource.open("rb"), *args, mimetype=mimetype, **kwargs)
+        return cls(_StreamIterableWrapper(resource.open("rb")), *args, mimetype=mimetype, **kwargs)
