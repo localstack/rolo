@@ -92,7 +92,7 @@ def test_websocket_headers(serve_websocket_listener):
 
     client = websocket.WebSocket()
     client.connect(
-        server.url.replace("http://", "ws://"), header=["Authorization: Basic let-me-in"]
+        server.url.replace("http://", "ws://"), header=["Authorization: Basic let-me-in", "CasedHeader: hello"]
     )
 
     assert client.handshake_response.status == 101
@@ -101,6 +101,7 @@ def test_websocket_headers(serve_websocket_listener):
     headers = json.loads(doc)
     assert headers["Connection"] == "Upgrade"
     assert headers["Authorization"] == "Basic let-me-in"
+    assert headers["CasedHeader"] == "hello"
 
 
 def test_websocket_reject(serve_websocket_listener):
@@ -174,11 +175,13 @@ def test_router_integration(serve_websocket_listener):
         with request.accept() as ws:
             ws.send("foo")
             ws.send(f"id={request_args['id']}")
+            ws.send(json.dumps(dict(request.headers)))
 
     router.add("/foo/<id>", _handler)
 
     server = serve_websocket_listener(WebSocketRequest.listener(router.dispatch))
     client = websocket.WebSocket()
-    client.connect(server.url.replace("http://", "ws://") + "/foo/bar")
+    client.connect(server.url.replace("http://", "ws://") + "/foo/bar", header=["CasedHeader: hello"])
     assert client.recv() == "foo"
     assert client.recv() == "id=bar"
+    assert "CasedHeader" in json.loads(client.recv())

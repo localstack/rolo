@@ -17,7 +17,7 @@ from rolo.gateway import Gateway
 from rolo.gateway.asgi import AsgiGateway
 from rolo.gateway.wsgi import WsgiGateway
 from rolo.routing import handler_dispatcher
-from rolo.serving.twisted import TwistedGateway
+from rolo.serving.twisted import TwistedGateway, HeaderPreservingHTTPChannel
 from rolo.websocket.adapter import WebSocketListener
 
 if typing.TYPE_CHECKING:
@@ -250,6 +250,7 @@ def serve_twisted_websocket_listener(twisted_reactor, serve_twisted_tcp_server):
                 websocketListener=websocket_listener,
             )
         )
+        site.protocol = HeaderPreservingHTTPChannel.protocol_factory
         return serve_twisted_tcp_server(site)
 
     return _create

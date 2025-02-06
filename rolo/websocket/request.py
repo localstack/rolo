@@ -3,7 +3,7 @@ import typing as t
 
 from werkzeug import Response
 from werkzeug._internal import _wsgi_decoding_dance
-from werkzeug.datastructures import EnvironHeaders, Headers
+from werkzeug.datastructures import EnvironHeaders, Headers, MultiDict
 from werkzeug.sansio.request import Request as _SansIORequest
 from werkzeug.wsgi import _get_server
 
@@ -115,6 +115,16 @@ class WebSocketRequest(_SansIORequest):
 
         :param environ: the WebSocketEnvironment
         """
+        raw_headers = environ.get("rolo.headers")
+        if raw_headers:
+            # restores raw headers from Twisted/ASGI scope, to have proper casing or dashes
+            # Similar to what we do in wsgi.py to restore Twisted casing handling
+            headers = Headers(
+                MultiDict([(k.decode("latin-1"), v.decode("latin-1")) for (k, v) in raw_headers])
+            )
+        else:
+            headers = Headers(EnvironHeaders(environ))
+
         # copied from werkzeug.wrappers.request
         super().__init__(
             method=environ.get("REQUEST_METHOD", "WEBSOCKET"),
@@ -123,7 +133,7 @@ class WebSocketRequest(_SansIORequest):
             root_path=_wsgi_decoding_dance(environ.get("SCRIPT_NAME") or ""),
             path=_wsgi_decoding_dance(environ.get("PATH_INFO") or ""),
             query_string=environ.get("QUERY_STRING", "").encode("latin1"),
-            headers=Headers(EnvironHeaders(environ)),
+            headers=headers,
             remote_addr=environ.get("REMOTE_ADDR"),
         )
         self.environ = environ
