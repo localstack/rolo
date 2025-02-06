@@ -17,7 +17,7 @@ from rolo.gateway import Gateway
 from rolo.gateway.asgi import AsgiGateway
 from rolo.gateway.wsgi import WsgiGateway
 from rolo.routing import handler_dispatcher
-from rolo.serving.twisted import TwistedGateway, HeaderPreservingHTTPChannel
+from rolo.serving.twisted import HeaderPreservingHTTPChannel, TwistedGateway
 from rolo.websocket.adapter import WebSocketListener
 
 if typing.TYPE_CHECKING:
