@@ -117,8 +117,9 @@ class WebSocketRequest(_SansIORequest):
         """
         raw_headers = environ.get("rolo.headers")
         if raw_headers:
-            # restores raw headers from Twisted/ASGI scope, to have proper casing or dashes
-            # Similar to what we do in wsgi.py to restore Twisted casing handling
+            # restores raw headers from the server scope, to have proper casing or dashes. This can depend on server
+            # behavior, but we want a unified way to keep header casing/formatting.
+            # This is similar to what we do in wsgi.py
             headers = Headers(
                 MultiDict([(k.decode("latin-1"), v.decode("latin-1")) for (k, v) in raw_headers])
             )

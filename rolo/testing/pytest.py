@@ -237,6 +237,12 @@ def serve_twisted_gateway(serve_twisted_tcp_server):
 
 @pytest.fixture
 def serve_twisted_websocket_listener(twisted_reactor, serve_twisted_tcp_server):
+    """
+    This fixture creates a Twisted Site, without the need to serve a fully-fledged rolo Gateway.
+    This is inspired by `rolo.serving.twisted.TwistedGateway`, but directly uses `WebsocketResourceDecorator` to
+    pass the `WebSocketListener` instead of `gateway.accept` to the `websocketListener` parameter.
+    It allows us to test the low-level behavior of WebSockets without being dependent on the Gateway implementation.
+    """
     from twisted.web.server import Site
 
     from rolo.serving.twisted import HeaderPreservingWSGIResource, WebsocketResourceDecorator
