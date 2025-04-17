@@ -239,6 +239,7 @@ class TestProxy:
             assert response.json["headers"]["X-My-Custom-Header"] == "hello world"
             assert response.json["headers"]["X-Forwarded-For"] == "127.0.0.10"
             assert response.json["headers"]["Host"] == "127.0.0.1:80"
+            assert "Accept-Encoding" not in response.json["headers"]
 
     @pytest.mark.parametrize("chunked", [True, False])
     def test_proxy_for_transfer_encoding_chunked(
