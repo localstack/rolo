@@ -2,6 +2,7 @@ import abc
 from urllib.parse import urlparse
 
 import requests
+import urllib3.util
 from werkzeug import Request, Response
 from werkzeug.datastructures import Headers
 
@@ -92,13 +93,10 @@ class SimpleRequestsClient(HttpClient):
 
         # urllib3 (used by requests) will set an Accept-Encoding header ("gzip,deflate")
         # - See urllib3.util.request.ACCEPT_ENCODING
-        # - This could be circumvented by setting Accept-Encoding explicitly to None
-        # BUT: Python's http client (used by urllib3) will always add an accept header if none is given
-        # - See https://github.com/psf/requests/issues/2234 and http.client.putrequest
-        # Explicitly set `Accept-Encoding: identity` here if no `Accept-Encoding` header is set in the originating
-        # request to avoid any unused manipulations by underlying libraries.
+        # - The solution to this, provided by urllib3, is to use `urllib3.util.SKIP_HEADER`
+        #   to prevent the header from being added.
         if not request.headers.get("accept-encoding"):
-            headers["accept-encoding"] = "identity"
+            headers["accept-encoding"] = urllib3.util.SKIP_HEADER
 
         response = self.session.request(
             method=request.method,
