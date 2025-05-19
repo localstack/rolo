@@ -39,3 +39,22 @@ class TestSimpleRequestClient:
 
         assert "Accept-Encoding" not in response.json["headers"]
         assert "accept-encoding" not in response.json["headers"]
+
+    def test_multi_values_headers(self, httpserver: HTTPServer):
+        def multi_values_handler(_request: WerkzeugRequest) -> Response:
+            multi_headers = Headers()
+            multi_headers.add("Set-Cookie", "value1")
+            multi_headers.add("Set-Cookie", "value2")
+            assert multi_headers.getlist("Set-Cookie") == ["value1", "value2"]
+
+            return Response(headers=multi_headers)
+
+        httpserver.expect_request("/").respond_with_handler(multi_values_handler)
+
+        url = httpserver.url_for("/")
+
+        request = Request(path="/", method="GET")
+
+        with SimpleRequestsClient() as client:
+            response = client.request(request, url)
+            assert response.headers.getlist("Set-Cookie") == ["value1", "value2"]
