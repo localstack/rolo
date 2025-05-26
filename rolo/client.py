@@ -76,6 +76,20 @@ class SimpleRequestsClient(HttpClient):
 
         return get_raw_base_url(request)
 
+    @staticmethod
+    def _transform_response_headers(response: requests.Response) -> Headers:
+        """
+        `requests` by default concatenate headers in response under a single header separated by a comma
+        This behavior is generally the same as having the same header multiple times with different values in a
+        response.
+        However, specific headers like `Set-Cookie` needs to be defined multiple times. By directly using the raw
+        `urllib3` response that still contains non-concatenate values, we can follow more closely the response.
+        """
+        headers = Headers()
+        for k, v in response.raw.headers.iteritems():
+            headers.add(k, v)
+        return headers
+
     def request(self, request: Request, server: str | None = None) -> Response:
         """
         Very naive implementation to make the given HTTP request using the requests library, i.e., process the request
@@ -116,12 +130,13 @@ class SimpleRequestsClient(HttpClient):
             final_response = Response(
                 response=response.content,
                 status=response.status_code,
-                headers=Headers(dict(response.headers)),
+                headers=self._transform_response_headers(response),
             )
             final_response.content_length = response.headers.get("Content-Length", 0)
             return final_response
 
-        response_headers = Headers(dict(response.headers))
+        response_headers = self._transform_response_headers(response)
+
         if "chunked" in (transfer_encoding := response_headers.get("Transfer-Encoding", "")):
             response_headers.pop("Content-Length", None)
             # We should not set `Transfer-Encoding` in a Response, because it is the responsibility of the webserver
