@@ -70,6 +70,33 @@ class TestRouterHandler:
         assert response.status_code == 404
         assert response.text == "not found"
 
+    def test_router_handler_with_custom_object(self, serve_gateway):
+        class CustomObject:
+            def __init__(self, message: str):
+                self.message = message
+
+        def _custom_object_handler(request: Request, args) -> CustomObject:
+            return (200, CustomObject(message=request.path))
+
+        def _response_converter(response: tuple[int, CustomObject]) -> Response:
+            status, body = response
+            return Response(status=status, response=body.message)
+
+        router = Router()
+        router.add("/foo", _custom_object_handler)
+
+        server = serve_gateway(
+            Gateway(
+                request_handlers=[
+                    RouterHandler(router, response_converter=_response_converter),
+                ],
+            )
+        )
+
+        doc = requests.get(server.url + "/foo")
+        assert doc.status_code == 200
+        assert doc.content == b"/foo"
+
 
 @pytest.mark.parametrize("serve_gateway", ["wsgi", "asgi", "twisted"], indirect=True)
 class TestEmptyResponseHandler:

@@ -18,13 +18,25 @@ class RouterHandler:
     router: Router
     respond_not_found: bool
 
-    def __init__(self, router: Router, respond_not_found: bool = False) -> None:
+    def __init__(
+        self,
+        router: Router,
+        respond_not_found: bool = False,
+        response_converter: t.Optional[t.Callable[..., Response]] = None,
+    ) -> None:
+        """
+        Individual routes from the Router should return a `rolo.response.Response` object.
+        If routes (can) return a custom response, use the `response_converter`-argument to pass a function that convert that custom response to a `rolo.response.Response` object.
+        """
         self.router = router
         self.respond_not_found = respond_not_found
+        self.response_converter = response_converter
 
     def __call__(self, chain: HandlerChain, context: RequestContext, response: Response):
         try:
             router_response = self.router.dispatch(context.request)
+            if self.response_converter:
+                router_response = self.response_converter(router_response)
             response.update_from(router_response)
             chain.stop()
         except NotFound:
