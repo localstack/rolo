@@ -167,6 +167,31 @@ class Router(t.Generic[E]):
         ...
 
     @overload
+    def add(
+        self,
+        path: str,
+        endpoint: t.Callable[[Request, ...], Response],
+        host: t.Optional[str] = None,
+        methods: t.Optional[t.Iterable[str]] = None,
+        **kwargs,
+    ) -> Rule:
+        """
+        Creates a new Rule from the given parameters and adds it to the URL Map.
+
+        TODO: many callers still expect ``add`` to return a single rule rather than a list, but it would be better to
+         homogenize the API and make every method return a list.
+
+        :param path: the path pattern to match. This path rule, in contrast to the default behavior of Werkzeug, will be
+                        matched against the raw / original (potentially URL-encoded) path.
+        :param endpoint: the function to invoke
+        :param host: an optional host matching pattern. if not pattern is given, the rule matches any host
+        :param methods: the allowed HTTP verbs for this rule
+        :param kwargs: any other argument that can be passed to ``werkzeug.routing.Rule``
+        :return: the rule that was created
+        """
+        ...
+
+    @overload
     def add(self, fn: _RouteEndpoint) -> list[Rule]:
         """
         Adds a RouteEndpoint (typically a function decorated with ``@route``) as a rule to the router.
