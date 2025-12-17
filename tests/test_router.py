@@ -557,3 +557,180 @@ class TestWsgiIntegration:
         finally:
             server.shutdown()
             t.join(timeout=10)
+
+
+class TestAutomaticRequestBodyParsing:
+    """Tests for automatic TypedDict request body parsing and validation."""
+
+    def test_typeddict_request_body_parsing(self):
+        """Handler with TypedDict parameter should automatically parse request body."""
+        from typing import TypedDict, Literal
+        from rolo.routing.handler import handler_dispatcher
+
+        class ActionRequest(TypedDict):
+            action: Literal["restart", "kill"]
+            force: bool
+
+        def post_handler(request: Request, body: ActionRequest):
+            return {"action": body["action"], "force": body["force"]}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/control", post_handler, methods=["POST"])
+
+        # Valid request
+        request = Request("POST", "/control", body=b'{"action": "restart", "force": true}')
+        response = router.dispatch(request)
+        assert response.status_code == 200
+        assert response.json == {"action": "restart", "force": True}
+
+    def test_typeddict_validation_missing_required_field(self):
+        """Request missing required field should return 400 error."""
+        from typing import TypedDict
+        from rolo.routing.handler import handler_dispatcher
+        from werkzeug.exceptions import BadRequest
+
+        class ActionRequest(TypedDict):
+            action: str
+            force: bool
+
+        def post_handler(request: Request, body: ActionRequest):
+            return {"action": body["action"]}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/control", post_handler, methods=["POST"])
+
+        # Missing 'force' field
+        request = Request("POST", "/control", body=b'{"action": "restart"}')
+        with pytest.raises(BadRequest) as exc_info:
+            router.dispatch(request)
+        assert "Missing required field: 'force'" in str(exc_info.value)
+
+    def test_typeddict_validation_unexpected_field(self):
+        """Request with unexpected field should return 400 error."""
+        from typing import TypedDict
+        from rolo.routing.handler import handler_dispatcher
+        from werkzeug.exceptions import BadRequest
+
+        class ActionRequest(TypedDict):
+            action: str
+
+        def post_handler(request: Request, body: ActionRequest):
+            return {"action": body["action"]}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/control", post_handler, methods=["POST"])
+
+        # Unexpected 'extra' field
+        request = Request("POST", "/control", body=b'{"action": "restart", "extra": "field"}')
+        with pytest.raises(BadRequest) as exc_info:
+            router.dispatch(request)
+        assert "Unexpected field: 'extra'" in str(exc_info.value)
+
+    def test_typeddict_validation_literal_type(self):
+        """Request with invalid Literal value should return 400 error."""
+        from typing import TypedDict, Literal
+        from rolo.routing.handler import handler_dispatcher
+        from werkzeug.exceptions import BadRequest
+
+        class ActionRequest(TypedDict):
+            action: Literal["restart", "kill"]
+
+        def post_handler(request: Request, body: ActionRequest):
+            return {"action": body["action"]}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/control", post_handler, methods=["POST"])
+
+        # Invalid action value
+        request = Request("POST", "/control", body=b'{"action": "pause"}')
+        with pytest.raises(BadRequest) as exc_info:
+            router.dispatch(request)
+        assert "value must be one of" in str(exc_info.value)
+        assert "('restart', 'kill')" in str(exc_info.value)
+
+    def test_invalid_json_returns_400(self):
+        """Request with invalid JSON should return 400 error."""
+        from typing import TypedDict
+        from rolo.routing.handler import handler_dispatcher
+        from werkzeug.exceptions import BadRequest
+
+        class ActionRequest(TypedDict):
+            action: str
+
+        def post_handler(request: Request, body: ActionRequest):
+            return {"action": body["action"]}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/control", post_handler, methods=["POST"])
+
+        # Invalid JSON
+        request = Request("POST", "/control", body=b'{"action": invalid}')
+        with pytest.raises(BadRequest) as exc_info:
+            router.dispatch(request)
+        assert "Invalid JSON in request body" in str(exc_info.value)
+
+    def test_non_dict_json_returns_400(self):
+        """Request with non-dict JSON should return 400 error."""
+        from typing import TypedDict
+        from rolo.routing.handler import handler_dispatcher
+        from werkzeug.exceptions import BadRequest
+
+        class ActionRequest(TypedDict):
+            action: str
+
+        def post_handler(request: Request, body: ActionRequest):
+            return {"action": body["action"]}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/control", post_handler, methods=["POST"])
+
+        # JSON array instead of object
+        request = Request("POST", "/control", body=b'["restart"]')
+        with pytest.raises(BadRequest) as exc_info:
+            router.dispatch(request)
+        assert "Request body must be a JSON object" in str(exc_info.value)
+
+    def test_no_typeddict_parameter_no_parsing(self):
+        """Handler without TypedDict parameter should not trigger automatic parsing."""
+        from rolo.routing.handler import handler_dispatcher
+
+        def post_handler(request: Request):
+            # Manual parsing still works
+            data = request.get_json(force=True)
+            return {"data": data}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/echo", post_handler, methods=["POST"])
+
+        request = Request("POST", "/echo", body=b'{"foo": "bar"}')
+        response = router.dispatch(request)
+        assert response.status_code == 200
+        assert response.json == {"data": {"foo": "bar"}}
+
+    def test_typeddict_with_optional_fields(self):
+        """TypedDict with optional fields should validate correctly."""
+        from typing import TypedDict
+        from typing_extensions import NotRequired
+        from rolo.routing.handler import handler_dispatcher
+
+        class ActionRequest(TypedDict):
+            action: str
+            force: NotRequired[bool]
+
+        def post_handler(request: Request, body: ActionRequest):
+            return {"action": body["action"], "force": body.get("force", False)}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/control", post_handler, methods=["POST"])
+
+        # Without optional field
+        request = Request("POST", "/control", body=b'{"action": "restart"}')
+        response = router.dispatch(request)
+        assert response.status_code == 200
+        assert response.json == {"action": "restart", "force": False}
+
+        # With optional field
+        request = Request("POST", "/control", body=b'{"action": "restart", "force": true}')
+        response = router.dispatch(request)
+        assert response.status_code == 200
+        assert response.json == {"action": "restart", "force": True}

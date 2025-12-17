@@ -182,10 +182,23 @@ class _EndpointRule(RuleFactory):
             # into the variable "__host__"
             host = "<__host__>"
 
+        # Extract OpenAPI metadata from kwargs (it's not a werkzeug Rule parameter)
+        rule_kwargs = dict(self.kwargs)
+        openapi_spec = rule_kwargs.pop("openapi", None)
+
+        # Store OpenAPI metadata on the endpoint if provided
+        if openapi_spec:
+            # For bound methods, we need to set the attribute on the underlying function
+            if hasattr(self.endpoint, "__func__"):
+                self.endpoint.__func__._openapi_spec = openapi_spec
+            elif hasattr(self.endpoint, "__dict__"):
+                self.endpoint._openapi_spec = openapi_spec
+            # If we can't set the attribute, the endpoint already has it set via @route decorator
+
         # the typing for endpoint is a str, but the doc states it can be any value,
         # however then the redirection URL building will not work
         rule = Rule(
-            self.path, endpoint=self.endpoint, methods=self.methods, host=host, **self.kwargs
+            self.path, endpoint=self.endpoint, methods=self.methods, host=host, **rule_kwargs
         )
         yield rule
 

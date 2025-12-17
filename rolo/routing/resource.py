@@ -103,9 +103,45 @@ class Resource(RuleFactory):
                 continue
 
             http_method = name[3:].upper()
-            rules.append(
-                Rule(
-                    self.path, endpoint=member, methods=[http_method], host=self.host, **self.kwargs
+
+            # If the member has rule_attributes (from @resource/@route decorator),
+            # extract OpenAPI metadata and create rules with it
+            if hasattr(member, "rule_attributes"):
+                from .rules import _EndpointRule
+                # Get the rule attributes for this member
+                attrs = member.rule_attributes
+                # Find attributes matching this HTTP method or use the first one
+                matching_attr = None
+                for attr in attrs:
+                    if attr.methods and http_method in attr.methods:
+                        matching_attr = attr
+                        break
+                if not matching_attr and attrs:
+                    matching_attr = attrs[0]
+
+                # Create rule using Resource's path, not the path from rule_attributes
+                # This allows reusing the same endpoint at different paths
+                if matching_attr:
+                    for rule in _EndpointRule(
+                        path=self.path,  # Use Resource's path, not matching_attr.path
+                        endpoint=member,
+                        host=self.host or matching_attr.host,
+                        methods=[http_method],
+                        **{**matching_attr.kwargs, **self.kwargs}  # Merge kwargs
+                    ).get_rules(map):
+                        rules.append(rule)
+                else:
+                    # Fallback if no matching attributes found
+                    rules.append(
+                        Rule(
+                            self.path, endpoint=member, methods=[http_method], host=self.host, **self.kwargs
+                        )
+                    )
+            else:
+                # Otherwise, create a simple Rule
+                rules.append(
+                    Rule(
+                        self.path, endpoint=member, methods=[http_method], host=self.host, **self.kwargs
+                    )
                 )
-            )
         return rules

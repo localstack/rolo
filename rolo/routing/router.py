@@ -376,6 +376,20 @@ class Router(t.Generic[E]):
 
         return wrapper
 
+    def generate_openapi_spec(
+        self, info: dict[str, t.Any] | None = None, only_with_metadata: bool = False
+    ) -> dict[str, t.Any]:
+        """
+        Generate OpenAPI 3.1.0 specification from registered routes.
+
+        :param info: Optional API info (title, version, description, etc.)
+        :param only_with_metadata: If True, only include routes with explicit OpenAPI metadata
+        :return: Complete OpenAPI spec as dict
+        """
+        from .openapi import generate_openapi_spec
+
+        return generate_openapi_spec(self, info, only_with_metadata)
+
     def wsgi(self) -> "WSGIApplication":
         """
         Returns this router as a WSGI compatible interface. This can be used to conveniently serve a Router instance
