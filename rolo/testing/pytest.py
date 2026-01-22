@@ -21,6 +21,7 @@ from rolo.serving.twisted import HeaderPreservingHTTPChannel, TwistedGateway
 from rolo.websocket.adapter import WebSocketListener
 
 if typing.TYPE_CHECKING:
+    from _typeshed.wsgi import WSGIApplication
     from hypercorn.typing import ASGIFramework
 
 
@@ -31,6 +32,8 @@ class ServerInfo(Protocol):
 
 
 class Server(ServerInfo):
+    """the BaseWSGIServer satisfies this protocol."""
+
     def shutdown(self):
         ...
 
@@ -44,9 +47,15 @@ class _ServerInfo:
 
 @pytest.fixture
 def serve_wsgi_app():
+    """
+    Factory fixture that can be called to serve WSGI apps for the duration of the fixture. They are served on the
+    host and port passed to the factory. The factory returns a ``BaseWSGIServer``.
+    """
     servers: list[serving.BaseWSGIServer] = []
 
-    def _serve(app, host: str = "localhost", port: int = None) -> serving.BaseWSGIServer | Server:
+    def _serve(
+        app: "WSGIApplication", host: str = "localhost", port: int = None
+    ) -> serving.BaseWSGIServer | Server:
         srv = serving.make_server(host, port or 0, app, threaded=True)
         name = threading._newname("test-server-%d")
         threading.Thread(target=srv.serve_forever, name=name, daemon=True).start()
@@ -72,6 +81,9 @@ def wsgi_router_server(serve_wsgi_app) -> tuple[Router, serving.BaseWSGIServer |
 
 @pytest.fixture()
 def serve_asgi_app():
+    """
+    Factory fixture to serve an ASGI app in a hypercorn server.
+    """
     import hypercorn
     import hypercorn.asyncio
 

@@ -1,3 +1,4 @@
+"""This module contains adapter code that exposes a ``Gateway`` as a WSGI application."""
 import typing as t
 
 from werkzeug.datastructures import Headers, MultiDict
@@ -17,7 +18,9 @@ LOG = logging.getLogger(__name__)
 
 class WsgiGateway:
     """
-    Exposes a ``Gateway`` as a WSGI application.
+    Exposes a ``Gateway`` as a WSGI application. This adapter creates from an incoming WSGIEnvironment dictionary a
+    ``Request`` object, as well as new ``Response`` object, and invokes ``Gateway.process(request, response)``.
+    The populated ``Response`` object is then used to invoke the ``start_response`` handler.
     """
 
     gateway: Gateway
@@ -29,6 +32,14 @@ class WsgiGateway:
     def __call__(
         self, environ: "WSGIEnvironment", start_response: "StartResponse"
     ) -> t.Iterable[bytes]:
+        """
+        Implements the WSGI application interface, which takes a WSGI environment dictionary, and the start response
+        callback. These are all WSGI concepts.
+
+        :param environ: The WSGI environment.
+        :param start_response: The WSGI StartResponse callback.
+        :return:
+        """
         # create request from environment
         LOG.debug(
             "%s %s%s",

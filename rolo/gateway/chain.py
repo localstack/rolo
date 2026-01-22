@@ -18,9 +18,31 @@ class RequestContext:
     """
     A request context holds the original incoming HTTP Request and arbitrary data. It is passed through the handler
     chain and allows handlers to communicate.
+
+    You can use a ``RequestContext`` instance to store any attributes you want. Example::
+
+        def handle(chain: HandlerChain, context: RequestContext, response: Response):
+            if context.request.headers.get("x-some-flag") == "true":
+                context.some_flag = True
+            else:
+                context.some_flag = False
+
+    Note though that, unless ``some_flag`` was set earlier, accessing ``context.some_flag`` will raise an
+    ``AttributeError``. You can safely get the attribute via ``context.get("some_flag")``, which will returns
+    ``None`` if the attribute does not exist.
+
+    If you want type hints, you can subclass the ``RequestContext`` and then set the context class in your
+    ``Gateway``. Example::
+
+        class MyRequestContext(RequestContext):
+            some_flag: bool
+
+        gateway = Gateway(context_class=MyRequestContext)
+
     """
 
     request: Request
+    """The underlying HTTP request coming from the web server."""
 
     def __init__(self, request: Request = None):
         self.request = request
@@ -36,6 +58,12 @@ class RequestContext:
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}")
 
     def get(self, key: str) -> t.Optional[t.Any]:
+        """
+        Safely access an arbitrary attribute of the ``RequestContext``.
+
+        :param key: The key of the attribute (like ``some_flag``)
+        :return: The value of the attribute, or None if the attribute does not exist.
+        """
         return self.__dict__.get(key)
 
 
@@ -277,12 +305,13 @@ class HandlerChain(t.Generic[RC]):
 class CompositeHandler:
     """
     A handler that sequentially invokes a list of Handlers, forming a stripped-down version of a handler
-    chain.
+    chain. Stop and termination conditions are determined by the ``HandlerChain`` instance that is being called.
     """
 
     handlers: list[Handler]
+    """List of handlers in this composite handler. Handlers are invoked in order they appear in the list."""
 
-    def __init__(self, return_on_stop=True) -> None:
+    def __init__(self, return_on_stop: bool = True) -> None:
         """
         Creates a new composite handler with an empty handler list.
 
@@ -321,8 +350,8 @@ class CompositeHandler:
 
 class CompositeExceptionHandler:
     """
-    A exception handler that sequentially invokes a list of ExceptionHandler instances, forming a
-    stripped-down version of a handler chain for exception handlers.
+    An exception handler that sequentially invokes a list of ExceptionHandler instances, forming a
+    stripped-down version of a handler chain for exception handlers. Works analogous to the ``CompositeHandler``.
     """
 
     handlers: t.List[ExceptionHandler]
@@ -361,7 +390,7 @@ class CompositeExceptionHandler:
 
 class CompositeResponseHandler(CompositeHandler):
     """
-    A CompositeHandler that by default does not return on stop, meaning that all handlers in the composite
+    A ``CompositeHandler`` that by default does not return on stop, meaning that all handlers in the composite
     will be executed, even if one of the handlers has called ``chain.stop()``. This mimics how response
     handlers are executed in the ``HandlerChain``.
     """
