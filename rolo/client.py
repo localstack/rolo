@@ -41,9 +41,9 @@ class HttpClient(abc.ABC):
 
 class _VerifyRespectingSession(requests.Session):
     """
-    A class which wraps requests.Session to circumvent https://github.com/psf/requests/issues/3829.
+    A class which wraps ``requests.Session`` to circumvent https://github.com/psf/requests/issues/3829.
     This ensures that if `REQUESTS_CA_BUNDLE` or `CURL_CA_BUNDLE` are set, the request does not perform the TLS
-    verification if `session.verify` is set to `False.
+    verification if ``session.verify`` is set to ``False``.
     """
 
     def merge_environment_settings(self, url, proxies, stream, verify, *args, **kwargs):
@@ -56,10 +56,27 @@ class _VerifyRespectingSession(requests.Session):
 
 
 class SimpleRequestsClient(HttpClient):
+    """
+    A ``HttpClient`` implementation that uses the ``requests`` library. Specifically it manages a ``requests.Session``
+    object that is used to make HTTP requests according to the passed ``rolo.Request`` object.
+    """
+
     session: requests.Session
     follow_redirects: bool
 
     def __init__(self, session: requests.Session = None, follow_redirects: bool = True):
+        """
+        Creates a new ``SimpleRequestsClient``. Use it to make HTTP requests with the requests library. Example use::
+
+            with SimpleRequestsClient() as client:
+                response = client.request(Request("GET", "https://httpbin.org/get"))
+
+        You may also pass your own Session object, but note that will be closed if you call ``client.close()``.
+
+        :param session: An optional ``requests.Session`` object. If none is passed, one will be created. Note that
+        calling ``client.close()`` will also close the session.
+        :param follow_redirects: whether to follow HTTP redirects when making http calls.
+        """
         self.session = session or _VerifyRespectingSession()
         self.follow_redirects = follow_redirects
 
@@ -97,7 +114,6 @@ class SimpleRequestsClient(HttpClient):
 
         :param request: the request to perform
         :param server: the URL to send the request to, which defaults to the host component of the original Request.
-        :param allow_redirects: allow the request to follow redirects
         :return: the response.
         """
 

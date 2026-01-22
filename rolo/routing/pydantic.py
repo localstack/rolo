@@ -60,7 +60,10 @@ def _try_parse_pydantic_request_body(
 
 class PydanticHandlerDispatcher(HandlerDispatcher):
     """
-    Special HandlerDispatcher that knows how to serialize and deserialize pydantic models.
+    Special ``HandlerDispatcher`` that knows how to serialize and deserialize pydantic models. Using this dispatcher
+    in your router will make it possible to use pydantic models in your handlers's signature. The user does not need to
+    instantiate this dispatcher directly. It's returned by ``handler_dispatcher()`` if ``config.ENABLE_PYDANTIC=True``,
+    which is the case if pydantic is in the system path.
     """
 
     def invoke_endpoint(

@@ -150,8 +150,10 @@ def update_item(request: Request, item_id: int, item: Item):
     return {"item_name": item.name, "item_id": item_id}
 
 
-router = Router()
+router = Router(dispatcher=handler_dispatcher())
 router.add(read_root)
 router.add(read_item)
 router.add(update_item)
 ```
+
+Pydantic support in the Router is automatically enabled if rolo finds that pydantic is installed.

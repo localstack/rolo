@@ -6,7 +6,7 @@ import typing as t
 from werkzeug.datastructures import Headers
 
 WebSocketEnvironment: t.TypeAlias = t.Dict[str, t.Any]
-"""Special WSGIEnvironment that has a ``rolo.websocket`` key that stores a `Websocket` instance."""
+"""Special WSGIEnvironment that has a ``rolo.websocket`` key that stores a ``Websocket`` instance."""
 
 
 class Event:

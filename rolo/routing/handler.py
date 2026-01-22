@@ -25,6 +25,7 @@ ResultValue = t.Union[
     dict[str, t.Any],  # a JSON dict
     list[t.Any],
 ]
+"""All types that can be returned by a handler that can be serialized into a ``Response`` object."""
 
 
 class Handler(t.Protocol):
@@ -38,7 +39,7 @@ class Handler(t.Protocol):
         def my_route(request: Request, organization: str, repo: str):
             return {"something": "returned as json response"}
 
-        router = Router(dispatcher=handler_dispatcher)
+        router = Router(dispatcher=handler_dispatcher())
         router.add("/<organization>/<repo>", endpoint=my_route)
 
     """
@@ -55,6 +56,11 @@ class Handler(t.Protocol):
 
 
 class HandlerDispatcher:
+    """
+    Adapter code between the default ``Router.dispatch`` interface, and the ``Handler`` protocol. See ``Handler`` for
+    more information.
+    """
+
     def __init__(self, json_encoder: t.Type[json.JSONEncoder] = None):
         self.json_encoder = json_encoder
 
@@ -73,6 +79,14 @@ class HandlerDispatcher:
         return endpoint(request, **request_args)
 
     def to_response(self, value: ResultValue) -> Response:
+        """
+        Serializes the given ``ResultValue`` (the thing a handler returns) to a ``Response`` object. If the value
+        is a string or byte value, it will be set directly as response body. If the value is a dict or a list,
+        they will be serialized into JSON data and an ``application/json`` response will be returned.
+
+        :param value: The value the handler returned
+        :return: a werkzeug-compatible Response object
+        """
         if isinstance(value, WerkzeugResponse):
             return value
 
@@ -95,7 +109,25 @@ class HandlerDispatcher:
 
 def handler_dispatcher(json_encoder: t.Type[json.JSONEncoder] = None) -> Dispatcher[Handler]:
     """
-    Creates a Dispatcher that treats endpoints like callables of the ``Handler`` Protocol.
+    Creates a Dispatcher that treats endpoints like callables of the ``Handler`` Protocol. Example::
+
+        def my_route(request: Request, organization: str, repo: str):
+            return {"something": "returned as json response"}
+
+        router = Router(dispatcher=handler_dispatcher())
+        router.add("/<organization>/<repo>", endpoint=my_route)
+
+    Handlers added to a Router that uses a handler dispatcher can return a variety of types. For example, you can
+    also return string or byte content directly, which will use a 200 status code by default::
+
+        def my_route(request: Request, organization: str, repo: str):
+            return "returned as text response"
+
+    Or, you can also return a manually created ``Response`` object:
+
+        def my_route(request: Request, organization: str, repo: str):
+            return Response("returned as text response", status_code=200)
+
 
     :param json_encoder: optionally the json encoder class to use for translating responses
     :return: a new dispatcher

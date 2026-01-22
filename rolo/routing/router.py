@@ -127,6 +127,29 @@ class Router(t.Generic[E]):
         dispatcher: Dispatcher[E] = None,
         converters: t.Mapping[str, t.Type[BaseConverter]] = None,
     ):
+        """
+        Create a new Router that dispatches requests based on rules to endpoints (methods). How endpoints are invoked
+        is controlled by dispatchers.
+
+        The default dispatcher ``call_endpoint`` invokes the endpoint with the request and the arguments extracted from
+        the URL, and expects a ``Response`` object in return::
+
+            @route("/greet/<name>")
+            def handler(request: Request, args: dict[str, Any]) -> Response:
+                name = args["name"]  # if called with ``/greet/foo`` will contain "foo"
+                return Response(f"hello {name}", 200)
+
+        If you want a flask-style dispatching, you can use ``handler_dispatcher()`` as dispatcher. This would be
+        equivalent to above::
+
+            @route("/greet/<name>")
+            def handler(request: Request, name: string) -> Response:
+                return f"hello {name}"
+
+        :param dispatcher: The dispatcher to use, the default is ``call_endpoint``.
+        :param converters: Werkzeug converters convert URL patterns to endpoint arguments. Default converters defined
+            in ``default_converters`` will always be added.
+        """
         if converters is None:
             converters = dict(self.default_converters)
         else:

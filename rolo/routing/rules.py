@@ -23,6 +23,10 @@ class _RouteEndpoint(t.Protocol):
 
 
 class WithHost(RuleFactory):
+    """
+    Rule that dispatches requests based on host headers.
+    """
+
     def __init__(self, host: str, rules: t.Iterable[RuleFactory]) -> None:
         self.host = host
         self.rules = rules
@@ -36,6 +40,10 @@ class WithHost(RuleFactory):
 
 
 class RuleGroup(RuleFactory):
+    """
+    Wraps an iterable of ``RuleFactory`` objects into a single ``RuleFactory``.
+    """
+
     def __init__(self, rules: t.Iterable[RuleFactory]):
         self.rules = rules
 
@@ -221,7 +229,7 @@ class _EndpointFunction(RuleFactory):
 
 class _EndpointsObject(RuleFactory):
     """
-    Scans the given object for members that can be used as a `RouteEndpoint` and yields them as rules.
+    Scans the given object for members that can be used as a ``RouteEndpoint`` and yields them as rules.
     """
 
     def __init__(self, obj: object):
