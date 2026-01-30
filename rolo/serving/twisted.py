@@ -150,14 +150,13 @@ def to_websocket_environment(request: Request) -> WebSocketEnvironment:
 
 class TwistedHeaderAdapter(TwistedHeaders):
     """
-    Custom twisted server Headers object to handle header casing.
+    Custom twisted server Headers object to handle header casing. This was introduced to abstract away the refactoring
+    that happened in https://github.com/twisted/twisted/pull/12264.
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # instantiate case mappings, these are used by `getAllRawHeaders` to restore casing
-        # by default, they are class attributes, so we would override them globally
-        self._caseMappings = dict(self._caseMappings)
+        self._caseMappings = {}
 
     def rememberHeaderCasing(self, name: Union[str, bytes]) -> None:
         """
@@ -167,7 +166,8 @@ class TwistedHeaderAdapter(TwistedHeaders):
         self._caseMappings[name.lower()] = name
 
     def getAllRawHeaders(self) -> Iterator[Tuple[bytes, Sequence[bytes]]]:
-        return super().getAllRawHeaders()
+        for k, v in self._rawHeaders.items():
+            yield self._caseMappings.get(k.lower(), k), v
 
 
 class TwistedRequestAdapter(TwistedRequest):
@@ -214,12 +214,12 @@ class HeaderPreservingHTTPChannel(HTTPChannel):
         headerSequence = [responseLine]
 
         if isinstance(headers, list):
-            # older twisted version
+            # older twisted versions sometime before 24.10 passed a list to this method
             for name, value in headers:
                 line = name + b": " + value + b"\r\n"
                 headerSequence.append(line)
         else:
-            # newer twisted versions
+            # newer twisted versions instead pass the headers object
             for name, values in headers.getAllRawHeaders():
                 line = name + b": " + b",".join(values) + b"\r\n"
                 headerSequence.append(line)
