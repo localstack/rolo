@@ -257,7 +257,11 @@ def serve_twisted_websocket_listener(twisted_reactor, serve_twisted_tcp_server):
     """
     from twisted.web.server import Site
 
-    from rolo.serving.twisted import HeaderPreservingWSGIResource, WebsocketResourceDecorator
+    from rolo.serving.twisted import (
+        HeaderPreservingWSGIResource,
+        TwistedRequestAdapter,
+        WebsocketResourceDecorator,
+    )
 
     def _create(websocket_listener: WebSocketListener):
         site = Site(
@@ -266,7 +270,8 @@ def serve_twisted_websocket_listener(twisted_reactor, serve_twisted_tcp_server):
                     twisted_reactor, twisted_reactor.getThreadPool(), None
                 ),
                 websocketListener=websocket_listener,
-            )
+            ),
+            requestFactory=TwistedRequestAdapter,
         )
         site.protocol = HeaderPreservingHTTPChannel.protocol_factory
         return serve_twisted_tcp_server(site)

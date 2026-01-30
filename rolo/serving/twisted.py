@@ -5,6 +5,7 @@ import logging
 import typing as t
 from io import BytesIO
 from queue import Empty, Queue
+from typing import Iterator, Sequence, Tuple, Union
 
 from twisted.internet import reactor
 from twisted.internet.protocol import Protocol
@@ -35,7 +36,6 @@ from rolo.websocket import (
 
 if t.TYPE_CHECKING:
     from _typeshed.wsgi import WSGIEnvironment
-
 
 LOG = logging.getLogger(__name__)
 
@@ -148,25 +148,46 @@ def to_websocket_environment(request: Request) -> WebSocketEnvironment:
     return environ
 
 
-class TwistedRequestAdapter(TwistedRequest):
+class TwistedHeaderAdapter(TwistedHeaders):
     """
-    Custom twisted server Request object to handle header casing.
+    Custom twisted server Headers object to handle header casing.
     """
-
-    rawHeaderList: list[tuple[bytes, bytes]]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # instantiate case mappings, these are used by `getAllRawHeaders` to restore casing
         # by default, they are class attributes, so we would override them globally
-        self.requestHeaders._caseMappings = dict(self.requestHeaders._caseMappings)
-        self.responseHeaders._caseMappings = dict(self.responseHeaders._caseMappings)
+        self._caseMappings = dict(self._caseMappings)
+
+    def rememberHeaderCasing(self, name: Union[str, bytes]) -> None:
+        """
+        Receives a raw header in its original casing and stores it to later restore the header casing in
+        ``getAllRawHeaders``.
+        """
+        self._caseMappings[name.lower()] = name
+
+    def getAllRawHeaders(self) -> Iterator[Tuple[bytes, Sequence[bytes]]]:
+        return super().getAllRawHeaders()
+
+
+class TwistedRequestAdapter(TwistedRequest):
+    """
+    Custom twisted server Request object to handle header casing.
+    """
+
+    requestHeaders: TwistedHeaderAdapter
+    responseHeaders: TwistedHeaderAdapter
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.requestHeaders = TwistedHeaderAdapter()
+        self.responseHeaders = TwistedHeaderAdapter()
 
 
 class HeaderPreservingHTTPChannel(HTTPChannel):
     """
     Special HTTPChannel implementation that uses ``Headers._caseMappings`` to retain header casing both for
-    request headers (server -> WSGI), and  response headers (WSGI -> client).
+    request headers (server -> WSGI), and response headers (WSGI -> client).
     """
 
     requestFactory = TwistedRequestAdapter
@@ -178,20 +199,30 @@ class HeaderPreservingHTTPChannel(HTTPChannel):
     def headerReceived(self, line):
         if not super().headerReceived(line):
             return False
-        # remember casing of headers for requests
+        # remember casing of headers for requests, note that this will only work if TwistedRequestAdapter is used
+        # as the Request object type, which requires a correct setup of the `Site` object.
         header, data = line.split(b":", 1)
         request: TwistedRequestAdapter = self.requests[-1]
-        request.requestHeaders._caseMappings[header.lower()] = header
+        request.requestHeaders.rememberHeaderCasing(header)
         return True
 
-    def writeHeaders(self, version, code, reason, headers):
+    def writeHeaders(
+        self, version: bytes, code: bytes, reason: bytes, headers: list | TwistedHeaders
+    ):
         """Alternative implementation that writes the raw headers instead of sanitized versions."""
         responseLine = version + b" " + code + b" " + reason + b"\r\n"
         headerSequence = [responseLine]
 
-        for name, value in headers:
-            line = name + b": " + value + b"\r\n"
-            headerSequence.append(line)
+        if isinstance(headers, list):
+            # older twisted version
+            for name, value in headers:
+                line = name + b": " + value + b"\r\n"
+                headerSequence.append(line)
+        else:
+            # newer twisted versions
+            for name, values in headers.getAllRawHeaders():
+                line = name + b": " + b",".join(values) + b"\r\n"
+                headerSequence.append(line)
 
         headerSequence.append(b"\r\n")
         self.transport.writeSequence(headerSequence)
@@ -216,7 +247,7 @@ class HeaderPreservingWSGIResponse(_WSGIResponse):
         # headers
         for header, _ in self.headers:
             header = header.encode("latin-1")
-            self.request.responseHeaders._caseMappings[header.lower()] = header
+            self.request.responseHeaders.rememberHeaderCasing(header)
         return result
 
 
@@ -441,6 +472,7 @@ class TwistedGateway(Site):
 
     def __init__(self, gateway: Gateway):
         super().__init__(
-            GatewayResource(gateway, reactor, reactor.getThreadPool()), TwistedRequestAdapter
+            resource=GatewayResource(gateway, reactor, reactor.getThreadPool()),
+            requestFactory=TwistedRequestAdapter,
         )
         self.protocol = HeaderPreservingHTTPChannel.protocol_factory
