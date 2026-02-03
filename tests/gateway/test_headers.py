@@ -1,12 +1,12 @@
 import http.client
 import json
+from collections import defaultdict
 
 import pytest
 import requests
 
 from rolo import Response
 from rolo.gateway import Gateway, HandlerChain, RequestContext
-from collections import defaultdict
 
 
 @pytest.mark.parametrize("serve_gateway", ["asgi", "twisted"], indirect=True)
@@ -63,7 +63,7 @@ def test_multivalue_header_handling(serve_gateway):
     # obscures the behavior
     conn = http.client.HTTPConnection(host="127.0.0.1", port=srv.port)
 
-    conn.request("GET", url=f"/hello")
+    conn.request("GET", url="/hello")
     response = conn.getresponse()
     response_headers = defaultdict(list)
 
