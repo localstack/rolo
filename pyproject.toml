@@ -7,7 +7,7 @@ name = "rolo"
 authors = [
     { name = "LocalStack Contributors", email = "info@localstack.cloud" }
 ]
-version = "0.8.1"
+version = "0.8.0"
 description = "A Python framework for building HTTP-based server applications"
 dependencies = [
     "requests>=2.20",
