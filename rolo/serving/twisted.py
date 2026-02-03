@@ -221,8 +221,9 @@ class HeaderPreservingHTTPChannel(HTTPChannel):
         else:
             # newer twisted versions instead pass the headers object
             for name, values in headers.getAllRawHeaders():
-                line = name + b": " + b",".join(values) + b"\r\n"
-                headerSequence.append(line)
+                for value in values:
+                    line = name + b": " + value + b"\r\n"
+                    headerSequence.append(line)
 
         headerSequence.append(b"\r\n")
         self.transport.writeSequence(headerSequence)
