@@ -8,7 +8,7 @@ venv: $(VENV_ACTIVATE)
 
 $(VENV_ACTIVATE): pyproject.toml
 	test -d .venv || $(VENV_BIN) .venv
-	$(VENV_RUN); pip install --upgrade pip setuptools wheel
+	$(VENV_RUN); pip install --upgrade pip
 	$(VENV_RUN); pip install -e .[dev]
 	touch $(VENV_DIR)/bin/activate
 

@@ -135,3 +135,6 @@ venv.bak/
 
 # sqlite database files created by examples
 *.db
+
+# Hatch VCS hook generates this file during build
+rolo/version.py
