@@ -4,7 +4,7 @@ from typing import Callable, List, Tuple
 import pytest
 import requests
 import werkzeug
-from werkzeug.exceptions import MethodNotAllowed, NotFound
+from werkzeug.exceptions import MethodNotAllowed, NotFound, SecurityError
 from werkzeug.routing import RequestRedirect, Submount
 
 from rolo import Request, Response, Router
@@ -166,7 +166,7 @@ class TestRouter:
         assert collector.requests.pop()[2] == {"port": None}
 
         # invalid port
-        with pytest.raises(NotFound):
+        with pytest.raises((NotFound, SecurityError)):
             router.dispatch(
                 Request(
                     method="GET",
