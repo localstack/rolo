@@ -183,7 +183,9 @@ class TestPathForwarder:
         }
 
     @pytest.mark.parametrize("chunked", [True, False])
-    def test_proxy_handler_transfer_encoding(self, router_server, httpserver: HTTPServer, chunked):
+    def test_proxy_handler_transfer_encoding_output(
+        self, router_server, httpserver: HTTPServer, chunked
+    ):
         router, proxy = router_server
         backend = httpserver
         body = "enough-for-content-length"
@@ -327,6 +329,28 @@ class TestProxy:
                 assert "Transfer-Encoding" not in response.headers
 
         assert response.data == body
+
+    def test_proxy_handler_transfer_encoding_input(self, router_server, httpserver: HTTPServer):
+        router, proxy = router_server
+        backend = httpserver
+
+        def _handler(_request: WerkzeugRequest):
+            # the handler/httpserver fixture will automatically decode the request. if the request was malformed, it
+            # would fail
+            return Response(_request.data)
+
+        backend.expect_request("").respond_with_handler(_handler)
+
+        router.add("/", ProxyHandler(backend.url_for("/")))
+
+        def gen():
+            yield b"fizz\n"
+            yield b"buzz\n"
+            yield b"done"
+
+        response = requests.post(proxy.url, data=gen())
+
+        assert response.text == "fizz\nbuzz\ndone"
 
 
 @pytest.mark.parametrize("consume_data", [True, False])

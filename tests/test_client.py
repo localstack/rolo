@@ -58,3 +58,57 @@ class TestSimpleRequestClient:
         with SimpleRequestsClient() as client:
             response = client.request(request, url)
             assert response.headers.getlist("Set-Cookie") == ["value1", "value2"]
+
+    def test_chunked_encoded_request(self, httpserver: HTTPServer):
+        # because SimpleRequestsClient mostly forwards an existing incoming request, and it uses `restore_payload`
+        # this means that any `Transfer-Encoding` headers must be stripped before sending
+
+        def transfer_encoded_handler(_request: WerkzeugRequest) -> Response:
+            return Response(response=_request.data)
+
+        httpserver.expect_request("/").respond_with_handler(transfer_encoded_handler)
+
+        url = httpserver.url_for("/")
+        body = b"hello world"
+        request = Request(
+            path="/",
+            method="POST",
+            body=body,
+            headers={
+                "Transfer-Encoding": "chunked",
+                "Content-Length": str(len(body)),
+            },
+        )
+
+        with SimpleRequestsClient() as client:
+            response = client.request(request, url)
+
+        assert response.data == body
+
+    def test_gzip_encoded_request(self, httpserver: HTTPServer):
+        def transfer_encoded_handler(_request: WerkzeugRequest) -> Response:
+            return Response(response=_request.data)
+
+        httpserver.expect_request("/").respond_with_handler(transfer_encoded_handler)
+
+        url = httpserver.url_for("/")
+        raw_body = b"hello world"
+        request = Request(
+            path="/",
+            method="POST",
+            # we need to use the raw body here, because in real world use case, the webserver would have read and
+            # decoded the payload
+            body=raw_body,
+            headers={
+                "Transfer-Encoding": "gzip",
+                "Content-Length": str(len(raw_body)),
+            },
+        )
+
+        with SimpleRequestsClient() as client:
+            response = client.request(request, url)
+
+        assert response.data == raw_body
+        # we're making sure we're not passing the `Transfer-Encoding` gzip along, as we're read the body and sent it
+        # decoded over the wire
+        assert "Transfer-Encoding" not in httpserver.log[0][0].headers

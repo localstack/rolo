@@ -128,6 +128,10 @@ class SimpleRequestsClient(HttpClient):
         if not request.headers.get("accept-encoding"):
             headers["accept-encoding"] = urllib3.util.SKIP_HEADER
 
+        # we need to remove `Transfer-Encoding` because it is a hop-by-hop header, and most of the `Request` objects
+        # passed are coming from a webserver, which already decoded the request
+        headers.pop("Transfer-Encoding", None)
+
         response = self.session.request(
             method=request.method,
             # use raw base url to preserve path url encoding
