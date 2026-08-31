@@ -314,6 +314,7 @@ class WebSocketChannel(Protocol):
         self.request = request
         self.wsproto = WSConnection(ConnectionType.SERVER)
         self.eventQueue = Queue()
+        self.upgraded = False
 
     @property
     def closed(self):
@@ -339,6 +340,9 @@ class WebSocketChannel(Protocol):
                 continue
             # TODO: filter other event types that are not expected by WebSocketAdapter
             if isinstance(event, events.CloseConnection):
+                # complete the closing handshake (RFC 6455 section 7): echo the close frame,
+                # then terminate the TCP connection, which is the server's job
+                self.wsSend(event.response())
                 self.close()
             self.eventQueue.put_nowait(event)
 
@@ -347,6 +351,8 @@ class WebSocketChannel(Protocol):
         if request.finished:
             return
         data = self.wsproto.send(event)
+        if isinstance(event, events.AcceptConnection):
+            self.upgraded = True
         request.transport.write(data)
 
     def wsReject(
@@ -361,6 +367,8 @@ class WebSocketChannel(Protocol):
         # which is cleaner here, though perhaps inconsistent with the rest of the implementation.
         # TODO: set default twisted headers
         request = self.request
+        if request.finished:
+            return
 
         request.setResponseCode(statusCode)
         for k, v in extraHeaders.to_wsgi_list():
@@ -379,10 +387,16 @@ class WebSocketChannel(Protocol):
             self.close()
 
     def close(self):
-        if not self.request.finished:
-            self.request.finish()
-            # special internal poison pill
-            self.eventQueue.put_nowait(events.CloseConnection(None))
+        if self.request.finished:
+            return
+        if self.upgraded:
+            # the 101 upgrade response was written raw to the transport, so ``Request.finish()``
+            # must not write its own (never started) HTTP response into the websocket stream
+            self.request.startedWriting = 1
+        self.request.finish()
+        self.request.transport.loseConnection()
+        # special internal poison pill
+        self.eventQueue.put_nowait(events.CloseConnection(None))
 
 
 class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
