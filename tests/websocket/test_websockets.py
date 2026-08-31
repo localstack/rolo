@@ -1,4 +1,5 @@
 import json
+import struct
 import threading
 from queue import Queue
 
@@ -80,6 +81,55 @@ def test_websocket_disconnect_while_iter(serve_websocket_listener):
     assert returned.wait(timeout=3)
     assert received[0] == "foo"
     assert received[1] == "bar"
+
+
+def test_close_handshake_client_initiated(serve_websocket_listener):
+    """When the client sends a close frame, the server has to echo the close frame back to
+    complete the closing handshake, and then terminate the TCP connection (RFC 6455 section 7)."""
+    disconnected = threading.Event()
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            with pytest.raises(WebSocketDisconnectedError):
+                ws.receive()
+        disconnected.set()
+
+    server = serve_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    client.send_close(websocket.STATUS_NORMAL)
+
+    frame = client.recv_frame()
+    assert frame.opcode == websocket.ABNF.OPCODE_CLOSE
+    assert struct.unpack("!H", frame.data[:2])[0] == websocket.STATUS_NORMAL
+
+    client.sock.settimeout(5)
+    assert client.sock.recv(1) == b"", "expected the server to terminate the TCP connection"
+    assert disconnected.wait(timeout=3)
+
+
+def test_close_handshake_server_initiated(serve_websocket_listener):
+    """When the server closes the websocket, the client has to receive a proper close frame,
+    followed by the termination of the TCP connection."""
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            ws.send("hello")
+
+    server = serve_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    assert client.recv() == "hello"
+
+    frame = client.recv_frame()
+    assert frame.opcode == websocket.ABNF.OPCODE_CLOSE
+
+    client.sock.settimeout(5)
+    assert client.sock.recv(1) == b"", "expected the server to terminate the TCP connection"
 
 
 def test_websocket_headers(serve_websocket_listener):
