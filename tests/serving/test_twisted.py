@@ -52,3 +52,12 @@ def test_full_absolute_form_uri(serve_twisted_gateway):
     response_data = json.loads(response.read())
     assert response_data["path"] == "/hello"
     assert response_data["raw_uri"].startswith("http")
+
+
+def test_twisted_gateway_import_and_wsproto_dependency():
+    import wsproto
+
+    from rolo.serving.twisted import TwistedGateway
+
+    assert hasattr(wsproto, "WSConnection")
+    assert TwistedGateway is not None
