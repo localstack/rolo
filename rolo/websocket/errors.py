@@ -10,8 +10,9 @@ class WebSocketDisconnectedError(WebSocketError):
     default_code = 1005
     """https://asgi.readthedocs.io/en/latest/specs/www.html#disconnect-receive-event-ws"""
 
-    def __init__(self, code: int = None):
+    def __init__(self, code: int = None, reason: str = None):
         self.code = code if code is not None else self.default_code
+        self.reason = reason
         super().__init__(f"Websocket disconnected code={self.code}")
 
 

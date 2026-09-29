@@ -416,7 +416,7 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
         # internal events
         if event["type"] == "websocket.disconnect":
             event: "WebsocketDisconnectEvent"
-            raise WebSocketDisconnectedError(event["code"])
+            raise WebSocketDisconnectedError(event["code"], event.get("reason"))
 
     def send(self, event: rolows.Message, timeout: float = None):
         if isinstance(event, rolows.TextMessage):

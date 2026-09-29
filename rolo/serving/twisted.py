@@ -339,12 +339,14 @@ class WebSocketChannel(Protocol):
                 self.wsSend(events.Pong(event.payload))
                 continue
             # TODO: filter other event types that are not expected by WebSocketAdapter
+            # queue the event before ``close()`` queues its poison pill, so the consumer sees the
+            # client's close code and reason
+            self.eventQueue.put_nowait(event)
             if isinstance(event, events.CloseConnection):
                 # complete the closing handshake (RFC 6455 section 7): echo the close frame,
                 # then terminate the TCP connection, which is the server's job
                 self.wsSend(event.response())
                 self.close()
-            self.eventQueue.put_nowait(event)
 
     def wsSend(self, event: events.Event):
         request = self.request
@@ -420,7 +422,7 @@ class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
         elif isinstance(event, events.TextMessage):
             return rolows.TextMessage(event.data)
         elif isinstance(event, events.CloseConnection):
-            raise WebSocketDisconnectedError(event.code)
+            raise WebSocketDisconnectedError(event.code, event.reason)
         else:
             raise WebSocketProtocolError(f"Unexpected event type {event.__class__.__name__}")
 

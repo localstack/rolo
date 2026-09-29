@@ -110,6 +110,30 @@ def test_close_handshake_client_initiated(serve_websocket_listener):
     assert disconnected.wait(timeout=3)
 
 
+def test_close_code_and_reason_client_initiated(serve_twisted_websocket_listener):
+    """The close code and reason sent by the client are surfaced through the
+    ``WebSocketDisconnectedError``. Only tested with twisted, since hypercorn does not pass the client's
+    close code or reason to the ASGI app."""
+    errors = Queue()
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            with pytest.raises(WebSocketDisconnectedError) as e:
+                ws.receive()
+            errors.put(e.value)
+
+    server = serve_twisted_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    client.close(status=4001, reason=b"test reason")
+
+    error = errors.get(timeout=3)
+    assert error.code == 4001
+    assert error.reason == "test reason"
+
+
 def test_close_handshake_server_initiated(serve_websocket_listener):
     """When the server closes the websocket, the client has to receive a proper close frame,
     followed by the termination of the TCP connection."""
