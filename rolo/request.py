@@ -292,6 +292,9 @@ def restore_payload(request: Request) -> bytes:
 
     data = request.data
 
+    if request.method not in ("POST", "PUT", "PATCH"):
+        return data
+
     if request.mimetype == "multipart/form-data":
         boundary = request.mimetype_params.get("boundary")
         if not boundary and "=" in (request.content_type or ""):

@@ -360,3 +360,16 @@ def test_restore_payload_multipart_boundary_params():
     restored_data = restore_payload(request)
     assert b"greeting" in restored_data
     assert b"hello" in restored_data
+
+
+@pytest.mark.parametrize("method", ["GET", "DELETE", "HEAD", "OPTIONS"])
+def test_restore_payload_non_payload_methods(method):
+    # Form/multipart bodies for methods outside POST/PUT/PATCH should not be reconstructed
+    request = Request(
+        method,
+        path="/",
+        body=b"formfield=value",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    restored_data = restore_payload(request)
+    assert restored_data == request.data
