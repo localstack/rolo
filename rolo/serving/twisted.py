@@ -8,6 +8,7 @@ from queue import Empty, Queue
 from typing import Iterator, Sequence, Tuple, Union
 
 from twisted.internet import reactor
+from twisted.internet.interfaces import IPushProducer
 from twisted.internet.protocol import Protocol
 from twisted.internet.threads import blockingCallFromThread
 from twisted.protocols.policies import ProtocolWrapper
@@ -290,7 +291,9 @@ class WebsocketResourceDecorator(proxyForInterface(IResource)):
         return super().render(request)
 
     def _processWebsocket(self, request: Request):
-        channel = WebSocketChannel(request)
+        channel = WebSocketChannel(request, self.original._reactor)
+        # lets the channel know when the transport's send buffer is full
+        request.registerProducer(channel, True)
         if isinstance(request.channel.transport, ProtocolWrapper):
             request.transport.wrappedProtocol = channel
         else:
@@ -304,6 +307,7 @@ class WebsocketResourceDecorator(proxyForInterface(IResource)):
         self.original._threadpool.callInThread(self.websocketListener, environment)
 
 
+@implementer(IPushProducer)
 class WebSocketChannel(Protocol):
     """
     Websocket protocol implementation over twisted. Note this is a ``twisted.internet.Protocol``, not a
@@ -312,11 +316,25 @@ class WebSocketChannel(Protocol):
 
     eventQueue: Queue[events.Event]
 
-    def __init__(self, request: Request):
+    closeTimeout: float = 5
+    """Seconds to wait for the client's close frame after the server sent its own, before terminating the TCP
+    connection anyway. The timeout starts once the transport's send buffer is no longer full, so a slow client
+    has the time to read the messages sent before the close frame."""
+
+    closeAbortTimeout: float = 30
+    """Seconds after the server sent its close frame, after which the TCP connection is aborted if it is still
+    open, discarding any data still buffered. This bounds the close of a client that stopped reading."""
+
+    def __init__(self, request: Request, reactor=reactor):
         self.request = request
+        self.reactor = reactor
         self.wsproto = WSConnection(ConnectionType.SERVER)
         self.eventQueue = Queue()
         self.upgraded = False
+        self._closeTimeoutCall = None
+        self._closeAbortCall = None
+        self._transportPaused = False
+        self._closeTimeoutPending = False
 
     @property
     def closed(self):
@@ -332,6 +350,8 @@ class WebSocketChannel(Protocol):
                 self.close()
 
     def connectionLost(self, reason):
+        if self._closeAbortCall and self._closeAbortCall.active():
+            self._closeAbortCall.cancel()
         self.close()
 
     def dataReceived(self, data: bytes) -> None:
@@ -339,6 +359,9 @@ class WebSocketChannel(Protocol):
         for event in self.wsproto.events():
             if isinstance(event, events.Ping):
                 self.wsSend(events.Pong(event.payload))
+                continue
+            if self.wsproto.state == ConnectionState.LOCAL_CLOSING:
+                # the server closed the websocket already, the listener doesn't consume any more frames
                 continue
             # TODO: filter other event types that are not expected by WebSocketAdapter
             # queue the event before ``close()`` queues its poison pill, so the consumer sees the
@@ -387,14 +410,56 @@ class WebSocketChannel(Protocol):
         self.close()
 
     def wsClose(self, code: int = 1000, reason: t.Optional[str] = None):
+        if self.request.finished or self.wsproto.state == ConnectionState.LOCAL_CLOSING:
+            return
+        if self.wsproto.state != ConnectionState.OPEN:
+            self.close()
+            return
         try:
             self.wsSend(events.CloseConnection(code, reason))
-        finally:
+        except BaseException:
             self.close()
+            raise
+        # the server terminates the TCP connection once it has both sent and received a close frame (RFC 6455
+        # section 5.5.1), so ``dataReceived`` terminates it when the client echoes the close frame. terminating it
+        # right away would stop reading the client's frames, and closing a socket with unread data makes the kernel
+        # reset the connection, which discards the frames the client has not read yet (RFC 6455 section 1.4).
+        # a client that doesn't echo the close frame gets the TCP connection terminated after ``closeTimeout``.
+        if self._transportPaused:
+            self._closeTimeoutPending = True
+        else:
+            self._startCloseTimeout()
+        self._closeAbortCall = self.reactor.callLater(self.closeAbortTimeout, self._abort)
+        # special internal poison pill, the websocket is closed for the listener already
+        self.eventQueue.put_nowait(events.CloseConnection(None))
+
+    def _abort(self):
+        self.close()
+        self.request.transport.abortConnection()
+
+    def _startCloseTimeout(self):
+        self._closeTimeoutPending = False
+        self._closeTimeoutCall = self.reactor.callLater(self.closeTimeout, self.close)
+
+    def pauseProducing(self):
+        self._transportPaused = True
+
+    def resumeProducing(self):
+        self._transportPaused = False
+        if self._closeTimeoutPending:
+            self._startCloseTimeout()
+
+    def stopProducing(self):
+        pass
 
     def close(self):
+        self._closeTimeoutPending = False
+        if self._closeTimeoutCall and self._closeTimeoutCall.active():
+            self._closeTimeoutCall.cancel()
         if self.request.finished:
             return
+        if getattr(self.request, "producer", None) is self:
+            self.request.unregisterProducer()
         if self.upgraded:
             # the 101 upgrade response was written raw to the transport, so ``Request.finish()``
             # must not write its own (never started) HTTP response into the websocket stream
