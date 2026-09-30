@@ -27,10 +27,16 @@ class WebSocket:
 
     request: "WebSocketRequest"
     socket: WebSocketAdapter
+    close_code: t.Optional[int]
+    """The close code of the first disconnect seen by ``receive``, or ``None`` if not disconnected yet."""
+    close_reason: t.Optional[str]
+    """The close reason of the first disconnect seen by ``receive``, if the client sent one."""
 
     def __init__(self, request: "WebSocketRequest", socket: WebSocketAdapter):
         self.request = request
         self.socket = socket
+        self.close_code = None
+        self.close_reason = None
 
     def __enter__(self):
         return self
@@ -70,11 +76,19 @@ class WebSocket:
         Receive the next data package from the websocket. Will be string or byte data and set the
         underlying binary for the frame automatically.
 
-        :raise WebSocketDisconnectedError: if the websocket was closed in the meantime
+        :raise WebSocketDisconnectedError: if the websocket was closed in the meantime. The close code
+            and reason are also stored in ``close_code`` and ``close_reason``.
         :raise WebSocketProtocolError: error in the interaction between the app and the webserver
         :return: the next data package from the websocket
         """
-        event = self.socket.receive()
+        try:
+            event = self.socket.receive()
+        except WebSocketDisconnectedError as e:
+            # keep the first disconnect, later calls may only see the server's internal close event
+            if self.close_code is None:
+                self.close_code = e.code
+                self.close_reason = e.reason
+            raise
         if isinstance(event, Message):
             data = event.data
             if data is None:
