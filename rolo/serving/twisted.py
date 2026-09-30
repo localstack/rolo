@@ -290,7 +290,7 @@ class WebsocketResourceDecorator(proxyForInterface(IResource)):
         return super().render(request)
 
     def _processWebsocket(self, request: Request):
-        channel = WebSocketChannel(request)
+        channel = WebSocketChannel(request, self.original._reactor)
         if isinstance(request.channel.transport, ProtocolWrapper):
             request.transport.wrappedProtocol = channel
         else:
@@ -312,11 +312,17 @@ class WebSocketChannel(Protocol):
 
     eventQueue: Queue[events.Event]
 
-    def __init__(self, request: Request):
+    closeTimeout: float = 5
+    """Seconds to wait for the client's close frame after the server sent its own, before terminating the TCP
+    connection anyway."""
+
+    def __init__(self, request: Request, reactor=reactor):
         self.request = request
+        self.reactor = reactor
         self.wsproto = WSConnection(ConnectionType.SERVER)
         self.eventQueue = Queue()
         self.upgraded = False
+        self._closeTimeoutCall = None
 
     @property
     def closed(self):
@@ -339,6 +345,9 @@ class WebSocketChannel(Protocol):
         for event in self.wsproto.events():
             if isinstance(event, events.Ping):
                 self.wsSend(events.Pong(event.payload))
+                continue
+            if self.wsproto.state == ConnectionState.LOCAL_CLOSING:
+                # the server closed the websocket already, the listener doesn't consume any more frames
                 continue
             # TODO: filter other event types that are not expected by WebSocketAdapter
             # queue the event before ``close()`` queues its poison pill, so the consumer sees the
@@ -387,12 +396,28 @@ class WebSocketChannel(Protocol):
         self.close()
 
     def wsClose(self, code: int = 1000, reason: t.Optional[str] = None):
+        if self.request.finished or self.wsproto.state == ConnectionState.LOCAL_CLOSING:
+            return
+        if self.wsproto.state != ConnectionState.OPEN:
+            self.close()
+            return
         try:
             self.wsSend(events.CloseConnection(code, reason))
-        finally:
+        except BaseException:
             self.close()
+            raise
+        # the server terminates the TCP connection once it has both sent and received a close frame (RFC 6455
+        # section 5.5.1), so ``dataReceived`` terminates it when the client echoes the close frame. terminating it
+        # right away would stop reading the client's frames, and closing a socket with unread data makes the kernel
+        # reset the connection, which discards the frames the client has not read yet (RFC 6455 section 1.4).
+        # a client that doesn't echo the close frame gets the TCP connection terminated after ``closeTimeout``.
+        self._closeTimeoutCall = self.reactor.callLater(self.closeTimeout, self.close)
+        # special internal poison pill, the websocket is closed for the listener already
+        self.eventQueue.put_nowait(events.CloseConnection(None))
 
     def close(self):
+        if self._closeTimeoutCall and self._closeTimeoutCall.active():
+            self._closeTimeoutCall.cancel()
         if self.request.finished:
             return
         if self.upgraded:

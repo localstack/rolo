@@ -201,8 +201,8 @@ def test_server_close_after_client_close(serve_twisted_websocket_listener, monke
 
 
 def test_close_handshake_server_initiated(serve_websocket_listener):
-    """When the server closes the websocket, the client has to receive a proper close frame,
-    followed by the termination of the TCP connection."""
+    """When the server closes the websocket, the client has to receive a proper close frame. Once the client
+    echoed it, the server has to terminate the TCP connection."""
 
     @WebSocketRequest.listener
     def app(request: WebSocketRequest):
@@ -210,6 +210,32 @@ def test_close_handshake_server_initiated(serve_websocket_listener):
             ws.send("hello")
 
     server = serve_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    assert client.recv() == "hello"
+
+    frame = client.recv_frame()
+    assert frame.opcode == websocket.ABNF.OPCODE_CLOSE
+    client.send_close(status=struct.unpack("!H", frame.data[:2])[0])
+
+    client.sock.settimeout(5)
+    assert client.sock.recv(1) == b"", "expected the server to terminate the TCP connection"
+
+
+def test_close_handshake_server_initiated_client_does_not_echo(
+    serve_twisted_websocket_listener, monkeypatch
+):
+    """When the client never echoes the server's close frame, the server has to terminate the TCP connection
+    after a timeout. Only tested with twisted, since the timeout is specific to its channel."""
+    monkeypatch.setattr(WebSocketChannel, "closeTimeout", 0.5)
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            ws.send("hello")
+
+    server = serve_twisted_websocket_listener(app)
 
     client = websocket.WebSocket()
     client.connect(server.url.replace("http://", "ws://"))
@@ -354,4 +380,51 @@ def test_send_many_messages(serve_websocket_listener):
         for i in range(messages):
             assert client.recv() == f"{i:08d}{payload}"
         client.send("done")
+        client.close()
+
+
+def test_server_close_while_client_is_sending(serve_twisted_websocket_listener):
+    """When the server closes the websocket while the client is still sending, the server has to wait for the
+    client's close frame before terminating the TCP connection (RFC 6455 section 5.5.1). Terminating it right
+    away leaves the client's frames unread on the server, which makes the kernel reset the connection, and the
+    client loses the messages it has not read yet (RFC 6455 section 1.4). Only tested with twisted, since
+    hypercorn terminates the TCP connection right away as well."""
+    messages = 50_000
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            assert ws.receive() == "start"
+            for _ in range(messages):
+                ws.send("x" * 32)
+
+    server = serve_twisted_websocket_listener(app)
+
+    for _ in range(3):
+        client = websocket.WebSocket()
+        client.connect(server.url.replace("http://", "ws://"), timeout=5)
+        stop = threading.Event()
+
+        def _ping(_client: websocket.WebSocket, _stop: threading.Event):
+            while not _stop.is_set():
+                try:
+                    _client.ping(b"ping")
+                except websocket.WebSocketException:
+                    return
+
+        pinger = threading.Thread(target=_ping, args=(client, stop), daemon=True)
+        pinger.start()
+        client.send("start")
+        try:
+            for _ in range(messages):
+                assert client.recv_data(control_frame=False)[1] == b"x" * 32
+        finally:
+            stop.set()
+            pinger.join()
+
+        # the server may still answer pings it received before it sent its close frame
+        opcode, _ = client.recv_data(control_frame=True)
+        while opcode == websocket.ABNF.OPCODE_PONG:
+            opcode, _ = client.recv_data(control_frame=True)
+        assert opcode == websocket.ABNF.OPCODE_CLOSE
         client.close()
