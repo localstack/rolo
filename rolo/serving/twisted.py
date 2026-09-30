@@ -8,6 +8,7 @@ from queue import Empty, Queue
 from typing import Iterator, Sequence, Tuple, Union
 
 from twisted.internet import reactor
+from twisted.internet.interfaces import IPushProducer
 from twisted.internet.protocol import Protocol
 from twisted.internet.threads import blockingCallFromThread
 from twisted.protocols.policies import ProtocolWrapper
@@ -291,6 +292,8 @@ class WebsocketResourceDecorator(proxyForInterface(IResource)):
 
     def _processWebsocket(self, request: Request):
         channel = WebSocketChannel(request, self.original._reactor)
+        # lets the channel know when the transport's send buffer is full
+        request.registerProducer(channel, True)
         if isinstance(request.channel.transport, ProtocolWrapper):
             request.transport.wrappedProtocol = channel
         else:
@@ -304,6 +307,7 @@ class WebsocketResourceDecorator(proxyForInterface(IResource)):
         self.original._threadpool.callInThread(self.websocketListener, environment)
 
 
+@implementer(IPushProducer)
 class WebSocketChannel(Protocol):
     """
     Websocket protocol implementation over twisted. Note this is a ``twisted.internet.Protocol``, not a
@@ -314,7 +318,8 @@ class WebSocketChannel(Protocol):
 
     closeTimeout: float = 5
     """Seconds to wait for the client's close frame after the server sent its own, before terminating the TCP
-    connection anyway."""
+    connection anyway. The timeout starts once the transport's send buffer is no longer full, so a slow client
+    has the time to read the messages sent before the close frame."""
 
     def __init__(self, request: Request, reactor=reactor):
         self.request = request
@@ -323,6 +328,8 @@ class WebSocketChannel(Protocol):
         self.eventQueue = Queue()
         self.upgraded = False
         self._closeTimeoutCall = None
+        self._transportPaused = False
+        self._closeTimeoutPending = False
 
     @property
     def closed(self):
@@ -411,15 +418,36 @@ class WebSocketChannel(Protocol):
         # right away would stop reading the client's frames, and closing a socket with unread data makes the kernel
         # reset the connection, which discards the frames the client has not read yet (RFC 6455 section 1.4).
         # a client that doesn't echo the close frame gets the TCP connection terminated after ``closeTimeout``.
-        self._closeTimeoutCall = self.reactor.callLater(self.closeTimeout, self.close)
+        if self._transportPaused:
+            self._closeTimeoutPending = True
+        else:
+            self._startCloseTimeout()
         # special internal poison pill, the websocket is closed for the listener already
         self.eventQueue.put_nowait(events.CloseConnection(None))
 
+    def _startCloseTimeout(self):
+        self._closeTimeoutPending = False
+        self._closeTimeoutCall = self.reactor.callLater(self.closeTimeout, self.close)
+
+    def pauseProducing(self):
+        self._transportPaused = True
+
+    def resumeProducing(self):
+        self._transportPaused = False
+        if self._closeTimeoutPending:
+            self._startCloseTimeout()
+
+    def stopProducing(self):
+        pass
+
     def close(self):
+        self._closeTimeoutPending = False
         if self._closeTimeoutCall and self._closeTimeoutCall.active():
             self._closeTimeoutCall.cancel()
         if self.request.finished:
             return
+        if getattr(self.request, "producer", None) is self:
+            self.request.unregisterProducer()
         if self.upgraded:
             # the 101 upgrade response was written raw to the transport, so ``Request.finish()``
             # must not write its own (never started) HTTP response into the websocket stream

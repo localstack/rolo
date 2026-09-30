@@ -1,6 +1,7 @@
 import json
 import struct
 import threading
+import time
 from queue import Queue
 
 import pytest
@@ -411,6 +412,7 @@ def test_server_close_while_client_is_sending(serve_twisted_websocket_listener):
                     _client.ping(b"ping")
                 except websocket.WebSocketException:
                     return
+                time.sleep(0.001)
 
         pinger = threading.Thread(target=_ping, args=(client, stop), daemon=True)
         pinger.start()
