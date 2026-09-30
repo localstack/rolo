@@ -1,4 +1,5 @@
 import json
+import socket
 import struct
 import threading
 import time
@@ -7,11 +8,13 @@ from queue import Queue
 import pytest
 import websocket
 from _pytest.fixtures import SubRequest
+from twisted.internet.threads import blockingCallFromThread
 from twisted.python import threadable
 from werkzeug.datastructures import Headers
 
 from rolo import Response, Router
 from rolo.serving.twisted import WebSocketChannel
+from rolo.testing.pytest import poll_condition
 from rolo.websocket.request import (
     WebSocketDisconnectedError,
     WebSocketProtocolError,
@@ -430,3 +433,48 @@ def test_server_close_while_client_is_sending(serve_twisted_websocket_listener):
             opcode, _ = client.recv_data(control_frame=True)
         assert opcode == websocket.ABNF.OPCODE_CLOSE
         client.close()
+
+
+def test_server_close_client_stops_reading(
+    twisted_reactor, serve_twisted_websocket_listener, monkeypatch
+):
+    """When the client stops reading after the server closed the websocket, the send buffer never drains, so
+    neither the client's close frame nor the start of the close timeout ever comes. The server has to abort the
+    TCP connection after ``closeAbortTimeout``. Only tested with twisted, since the timeout is specific to its
+    channel."""
+    monkeypatch.setattr(WebSocketChannel, "closeTimeout", 0.2)
+    monkeypatch.setattr(WebSocketChannel, "closeAbortTimeout", 0.5)
+    channels = Queue()
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            channel = ws.socket.channel
+            channels.put(channel)
+            # small socket buffers, so the send buffer stays full while the client doesn't read
+            blockingCallFromThread(
+                twisted_reactor,
+                channel.request.transport.socket.setsockopt,
+                socket.SOL_SOCKET,
+                socket.SO_SNDBUF,
+                4096,
+            )
+            ws.send(b"x" * (8 * 1024 * 1024))
+
+    server = serve_twisted_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(
+        server.url.replace("http://", "ws://"),
+        timeout=5,
+        sockopt=[(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)],
+    )
+    try:
+        channel = channels.get(timeout=5)
+        transport = channel.request.transport
+        assert poll_condition(
+            lambda: blockingCallFromThread(twisted_reactor, lambda: transport.disconnected),
+            timeout=5,
+        ), "expected the server to abort the TCP connection"
+    finally:
+        client.shutdown()

@@ -321,6 +321,10 @@ class WebSocketChannel(Protocol):
     connection anyway. The timeout starts once the transport's send buffer is no longer full, so a slow client
     has the time to read the messages sent before the close frame."""
 
+    closeAbortTimeout: float = 30
+    """Seconds after the server sent its close frame, after which the TCP connection is aborted if it is still
+    open, discarding any data still buffered. This bounds the close of a client that stopped reading."""
+
     def __init__(self, request: Request, reactor=reactor):
         self.request = request
         self.reactor = reactor
@@ -328,6 +332,7 @@ class WebSocketChannel(Protocol):
         self.eventQueue = Queue()
         self.upgraded = False
         self._closeTimeoutCall = None
+        self._closeAbortCall = None
         self._transportPaused = False
         self._closeTimeoutPending = False
 
@@ -345,6 +350,8 @@ class WebSocketChannel(Protocol):
                 self.close()
 
     def connectionLost(self, reason):
+        if self._closeAbortCall and self._closeAbortCall.active():
+            self._closeAbortCall.cancel()
         self.close()
 
     def dataReceived(self, data: bytes) -> None:
@@ -422,8 +429,13 @@ class WebSocketChannel(Protocol):
             self._closeTimeoutPending = True
         else:
             self._startCloseTimeout()
+        self._closeAbortCall = self.reactor.callLater(self.closeAbortTimeout, self._abort)
         # special internal poison pill, the websocket is closed for the listener already
         self.eventQueue.put_nowait(events.CloseConnection(None))
+
+    def _abort(self):
+        self.close()
+        self.request.transport.abortConnection()
 
     def _startCloseTimeout(self):
         self._closeTimeoutPending = False
