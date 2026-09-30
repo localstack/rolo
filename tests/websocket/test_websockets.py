@@ -134,6 +134,30 @@ def test_close_code_and_reason_client_initiated(serve_twisted_websocket_listener
     assert error.reason == "test reason"
 
 
+def test_close_code_and_reason_after_iter(serve_twisted_websocket_listener):
+    """The iterator ends silently on disconnect, but the client's close code and reason are kept on the
+    ``WebSocket``. Only tested with twisted, see ``test_close_code_and_reason_client_initiated``."""
+    closes = Queue()
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            assert ws.close_code is None
+            assert ws.close_reason is None
+            for _ in iter(ws):
+                pass
+            closes.put((ws.close_code, ws.close_reason))
+
+    server = serve_twisted_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    client.send("foo")
+    client.close(status=4001, reason=b"test reason")
+
+    assert closes.get(timeout=3) == (4001, "test reason")
+
+
 def test_close_handshake_server_initiated(serve_websocket_listener):
     """When the server closes the websocket, the client has to receive a proper close frame,
     followed by the termination of the TCP connection."""
