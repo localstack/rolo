@@ -108,9 +108,6 @@ class _UnfinishedRequest:
     def finish(self):
         pass
 
-    def isSecure(self):
-        return False
-
 
 def _accepted_websocket() -> tuple[TwistedWebSocketAdapter, WSConnection, _FakeTransport]:
     client = WSConnection(ConnectionType.CLIENT)

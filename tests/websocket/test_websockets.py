@@ -328,3 +328,30 @@ def test_router_integration(serve_websocket_listener):
     assert client.recv() == "foo"
     assert client.recv() == "id=bar"
     assert "CasedHeader" in json.loads(client.recv())
+
+
+def test_send_many_messages(serve_websocket_listener):
+    """Sending more data than the socket buffers hold must deliver every message intact and in order. The
+    twisted listener runs in a threadpool thread, and writing to the transport directly from there races
+    with the reactor flushing the same transport, which loses and reorders data."""
+    messages = 10_000
+    payload = "x" * 1024
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            assert ws.receive() == "start"
+            for i in range(messages):
+                ws.send(f"{i:08d}{payload}")
+            assert ws.receive() == "done"
+
+    server = serve_websocket_listener(app)
+
+    for _ in range(3):
+        client = websocket.WebSocket()
+        client.connect(server.url.replace("http://", "ws://"), timeout=5)
+        client.send("start")
+        for i in range(messages):
+            assert client.recv() == f"{i:08d}{payload}"
+        client.send("done")
+        client.close()

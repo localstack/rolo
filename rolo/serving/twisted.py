@@ -408,11 +408,12 @@ class WebSocketChannel(Protocol):
 class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
     """
     Adapter between the ``WebSocketChannel``, which lives in the reactor thread, and the ``WebSocketListener``,
-    which runs in a threadpool thread. On TLS connections, every operation that touches the channel's connection
-    state or transport is scheduled onto the reactor thread, since writing to the TLS connection from the listener
-    thread races with the reactor processing incoming TLS records, which corrupts the connection. ``send`` is
-    scheduled without waiting for the write, the other operations wait for their completion. Plain connections
-    keep writing directly from the listener thread, which avoids the cost of the thread handoff.
+    which runs in a threadpool thread. Twisted is not thread-safe, so every operation that touches the channel's
+    connection state or transport is scheduled onto the reactor thread. Writing from the listener thread directly
+    races with the reactor writing to the same transport, which loses or reorders data, and on TLS connections also
+    with the reactor processing incoming TLS records, which breaks the connection. ``send`` is scheduled without
+    waiting for the write (the reactor runs scheduled calls in order), the other operations wait for their
+    completion.
     """
 
     channel: WebSocketChannel
@@ -420,11 +421,10 @@ class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
     def __init__(self, channel: WebSocketChannel, reactor=reactor):
         self.channel = channel
         self.reactor = reactor
-        self._isTLS = channel.request.isSecure()
 
     def _mustScheduleInReactor(self) -> bool:
         # without a running reactor, there's no reactor thread to race with
-        return self._isTLS and self.reactor.running and not threadable.isInIOThread()
+        return self.reactor.running and not threadable.isInIOThread()
 
     def _callInReactor(self, f: t.Callable, *args):
         if self._mustScheduleInReactor():
