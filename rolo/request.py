@@ -292,18 +292,21 @@ def restore_payload(request: Request) -> bytes:
 
     data = request.data
 
-    if request.method != "POST":
+    if request.method not in ("POST", "PUT", "PATCH"):
         return data
 
     if request.mimetype == "multipart/form-data":
-        boundary = request.content_type.split("=")[1]
+        boundary = request.mimetype_params.get("boundary")
+        if not boundary and "=" in (request.content_type or ""):
+            boundary = request.content_type.split("=")[1]
 
-        fields = MultiDict()
-        fields.update(request.form)
-        fields.update(request.files)
+        if boundary:
+            fields = MultiDict()
+            fields.update(request.form)
+            fields.update(request.files)
 
-        _, data_files = encode_multipart(fields, boundary)
-        data += data_files
+            _, data_files = encode_multipart(fields, boundary)
+            data += data_files
 
     elif request.mimetype == "application/x-www-form-urlencoded":
         data += urlencode(list(request.form.items(multi=True))).encode("utf-8")

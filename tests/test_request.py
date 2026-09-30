@@ -208,7 +208,8 @@ def test_utf8_path():
     assert r.environ["PATH_INFO"] == "/foo/Ä\x800Ã\x84"  # quoted and latin-1 encoded
 
 
-def test_restore_payload_multipart_parsing():
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH"])
+def test_restore_payload_multipart_parsing(method):
     body = (
         b"\r\n"
         b"--4efd159eae0c4f4e125a5a509e073d85"
@@ -238,7 +239,7 @@ def test_restore_payload_multipart_parsing():
     )
 
     request = Request(
-        "POST",
+        method,
         path="/",
         body=body,
         headers={"Content-Type": "multipart/form-data; boundary=4efd159eae0c4f4e125a5a509e073d85"},
@@ -315,11 +316,12 @@ def test_request_mixed_multipart():
     assert b"formfield" not in restored_data
 
 
-def test_restore_payload_form_urlencoded():
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH"])
+def test_restore_payload_form_urlencoded(method):
     body = b"formfield=not+a+file%2C+just+a+field"
 
     request = Request(
-        "POST",
+        method,
         path="/",
         body=body,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -336,3 +338,38 @@ def test_restore_payload_form_urlencoded():
     restored_data = restore_payload(request)
 
     assert restored_data == body
+
+
+def test_restore_payload_multipart_boundary_params():
+    body = (
+        b"--custom-boundary\r\n"
+        b'Content-Disposition: form-data; name="greeting"\r\n\r\n'
+        b"hello\r\n"
+        b"--custom-boundary--\r\n"
+    )
+
+    # test boundary with quotes and additional parameters like charset
+    request = Request(
+        "PUT",
+        path="/",
+        body=body,
+        headers={"Content-Type": 'multipart/form-data; charset=utf-8; boundary="custom-boundary"'},
+    )
+
+    assert dict(request.form) == {"greeting": "hello"}
+    restored_data = restore_payload(request)
+    assert b"greeting" in restored_data
+    assert b"hello" in restored_data
+
+
+@pytest.mark.parametrize("method", ["GET", "DELETE", "HEAD", "OPTIONS"])
+def test_restore_payload_non_payload_methods(method):
+    # Form/multipart bodies for methods outside POST/PUT/PATCH should not be reconstructed
+    request = Request(
+        method,
+        path="/",
+        body=b"formfield=value",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    restored_data = restore_payload(request)
+    assert restored_data == request.data
