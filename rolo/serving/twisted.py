@@ -18,7 +18,7 @@ from twisted.web.server import NOT_DONE_YET, Request, Site
 from twisted.web.server import Request as TwistedRequest
 from twisted.web.wsgi import WSGIResource, _WSGIResponse, _wsgiString
 from werkzeug.datastructures import Headers
-from wsproto import ConnectionType, WSConnection, events
+from wsproto import ConnectionState, ConnectionType, WSConnection, events
 from zope.interface import implementer
 
 from rolo.gateway import Gateway
@@ -351,6 +351,8 @@ class WebSocketChannel(Protocol):
     def wsSend(self, event: events.Event):
         request = self.request
         if request.finished:
+            return
+        if self.wsproto.state in (ConnectionState.LOCAL_CLOSING, ConnectionState.CLOSED):
             return
         data = self.wsproto.send(event)
         if isinstance(event, events.AcceptConnection):

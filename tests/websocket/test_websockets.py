@@ -6,9 +6,11 @@ from queue import Queue
 import pytest
 import websocket
 from _pytest.fixtures import SubRequest
+from twisted.python import threadable
 from werkzeug.datastructures import Headers
 
 from rolo import Response, Router
+from rolo.serving.twisted import WebSocketChannel
 from rolo.websocket.request import (
     WebSocketDisconnectedError,
     WebSocketProtocolError,
@@ -156,6 +158,46 @@ def test_close_code_and_reason_after_iter(serve_twisted_websocket_listener):
     client.close(status=4001, reason=b"test reason")
 
     assert closes.get(timeout=3) == (4001, "test reason")
+
+
+def test_server_close_after_client_close(serve_twisted_websocket_listener, monkeypatch):
+    """The server application closing the websocket after the client closed it must not fail, even when
+    it runs before the reactor has finished the request of the completed closing handshake. The reactor is
+    held in that window until the application has closed. Only tested with twisted, since the window is
+    specific to its channel."""
+    app_closed = threading.Event()
+    results = Queue()
+
+    original_close = WebSocketChannel.close
+
+    def close(self):
+        if threadable.isInIOThread():
+            app_closed.wait(timeout=3)
+        original_close(self)
+
+    monkeypatch.setattr(WebSocketChannel, "close", close)
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        try:
+            with request.accept() as ws:
+                with pytest.raises(WebSocketDisconnectedError):
+                    ws.receive()
+                ws.close()
+        except Exception as e:
+            results.put(e)
+        else:
+            results.put("ok")
+        finally:
+            app_closed.set()
+
+    server = serve_twisted_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    client.close(status=4001, reason=b"test reason")
+
+    assert results.get(timeout=5) == "ok"
 
 
 def test_close_handshake_server_initiated(serve_websocket_listener):
