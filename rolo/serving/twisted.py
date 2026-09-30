@@ -9,7 +9,9 @@ from typing import Iterator, Sequence, Tuple, Union
 
 from twisted.internet import reactor
 from twisted.internet.protocol import Protocol
+from twisted.internet.threads import blockingCallFromThread
 from twisted.protocols.policies import ProtocolWrapper
+from twisted.python import threadable
 from twisted.python.components import proxyForInterface
 from twisted.web.http import HTTPChannel, _GenericHTTPChannelProtocol, urlparse
 from twisted.web.http_headers import Headers as TwistedHeaders
@@ -297,7 +299,7 @@ class WebsocketResourceDecorator(proxyForInterface(IResource)):
         channel.initiateUpgrade()
 
         environment = to_websocket_environment(request)
-        environment["rolo.websocket"] = TwistedWebSocketAdapter(channel)
+        environment["rolo.websocket"] = TwistedWebSocketAdapter(channel, self.original._reactor)
         # WSGIResource also dispatches requests through the threadpool
         self.original._threadpool.callInThread(self.websocketListener, environment)
 
@@ -404,10 +406,36 @@ class WebSocketChannel(Protocol):
 
 
 class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
+    """
+    Adapter between the ``WebSocketChannel``, which lives in the reactor thread, and the ``WebSocketListener``,
+    which runs in a threadpool thread. Twisted is not thread-safe, so every operation that touches the channel's
+    connection state or transport is scheduled onto the reactor thread. Writing from the listener thread directly
+    races with the reactor writing to the same transport, which loses or reorders data, and on TLS connections also
+    with the reactor processing incoming TLS records, which breaks the connection. ``send`` is scheduled without
+    waiting for the write (the reactor runs scheduled calls in order), the other operations wait for their
+    completion.
+    """
+
     channel: WebSocketChannel
 
-    def __init__(self, channel: WebSocketChannel):
+    def __init__(self, channel: WebSocketChannel, reactor=reactor):
         self.channel = channel
+        self.reactor = reactor
+
+    def _mustScheduleInReactor(self) -> bool:
+        # without a running reactor, there's no reactor thread to race with
+        return self.reactor.running and not threadable.isInIOThread()
+
+    def _callInReactor(self, f: t.Callable, *args):
+        if self._mustScheduleInReactor():
+            return blockingCallFromThread(self.reactor, f, *args)
+        return f(*args)
+
+    def _sendInReactor(self, event: events.Event):
+        if self._mustScheduleInReactor():
+            self.reactor.callFromThread(self.channel.wsSend, event)
+        else:
+            self.channel.wsSend(event)
 
     def receive(self, timeout: float = None) -> rolows.CreateConnection | rolows.Message:
         try:
@@ -430,9 +458,9 @@ class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
 
     def send(self, event: rolows.Message, timeout: float = None):
         if isinstance(event, rolows.TextMessage):
-            self.channel.wsSend(events.TextMessage(event.data))
+            self._sendInReactor(events.TextMessage(event.data))
         elif isinstance(event, rolows.BytesMessage):
-            self.channel.wsSend(events.BytesMessage(event.data))
+            self._sendInReactor(events.BytesMessage(event.data))
         else:
             raise TypeError(f"Unexpected event type {event.__class__.__name__}")
 
@@ -443,7 +471,10 @@ class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
         body: t.Iterable[bytes] = None,
         timeout: float = None,
     ):
-        self.channel.wsReject(status_code, headers, body)
+        # consume the body here, so the reactor thread doesn't run arbitrary (possibly blocking) iterators
+        self._callInReactor(
+            self.channel.wsReject, status_code, headers, list(body) if body else None
+        )
 
     def accept(
         self,
@@ -461,9 +492,12 @@ class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
 
         # TODO: extensions
         event = events.AcceptConnection(subprotocol, extensions=[], extra_headers=raw_headers)
-        self.channel.wsSend(event)
+        self._callInReactor(self.channel.wsSend, event)
 
     def close(self, code: int = 1001, reason: str = None, timeout: float = None):
+        self._callInReactor(self._close, code, reason)
+
+    def _close(self, code: int, reason: str | None):
         if not self.channel.closed:
             self.channel.wsClose(code, reason)
 

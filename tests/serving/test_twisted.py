@@ -1,10 +1,20 @@
+import datetime
 import http.client
 import io
 import json
+import ssl as stdlib_ssl
 
 import pytest
 import requests
+import websocket
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.x509.oid import NameOID
+from twisted.internet import ssl
+from twisted.protocols.tls import TLSMemoryBIOFactory
 from twisted.web.http_headers import Headers as TwistedHeaders
+from twisted.web.server import Site
 from wsproto import ConnectionType, WSConnection, events
 from wsproto.connection import ConnectionState
 
@@ -12,7 +22,16 @@ from rolo import Request, Router, route
 from rolo.dispatcher import handler_dispatcher
 from rolo.gateway import Gateway
 from rolo.gateway.handlers import RouterHandler
-from rolo.serving.twisted import TwistedWebSocketAdapter, WebSocketChannel
+from rolo.serving.twisted import (
+    HeaderPreservingHTTPChannel,
+    HeaderPreservingWSGIResource,
+    TwistedRequestAdapter,
+    TwistedWebSocketAdapter,
+    WebSocketChannel,
+    WebsocketResourceDecorator,
+)
+from rolo.testing.pytest import _ServerInfo, get_random_tcp_port, wait_server_is_up
+from rolo.websocket import WebSocketListener, WebSocketRequest
 from rolo.websocket.adapter import CreateConnection, TextMessage
 from rolo.websocket.request import WebSocketDisconnectedError
 
@@ -141,3 +160,81 @@ def test_websocket_close_twice_before_request_finished():
     adapter.send(TextMessage("too late"))
 
     assert b"".join(transport.written) == sent
+
+
+@pytest.fixture(scope="module")
+def self_signed_cert() -> tuple[bytes, bytes]:
+    """A self-signed certificate and private key for ``localhost``, both PEM encoded."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "localhost")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+    key_pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    )
+    return cert.public_bytes(serialization.Encoding.PEM), key_pem
+
+
+@pytest.fixture
+def serve_twisted_tls_websocket_listener(twisted_reactor, self_signed_cert):
+    """Like ``serve_twisted_websocket_listener``, but serves the listener over TLS."""
+    ports = []
+
+    def _create(websocket_listener: WebSocketListener):
+        site = Site(
+            WebsocketResourceDecorator(
+                original=HeaderPreservingWSGIResource(
+                    twisted_reactor, twisted_reactor.getThreadPool(), None
+                ),
+                websocketListener=websocket_listener,
+            ),
+            requestFactory=TwistedRequestAdapter,
+        )
+        site.protocol = HeaderPreservingHTTPChannel.protocol_factory
+
+        cert_pem, key_pem = self_signed_cert
+        certificate = ssl.PrivateCertificate.loadPEM(cert_pem + key_pem)
+        factory = TLSMemoryBIOFactory(certificate.options(), False, site)
+
+        port = get_random_tcp_port()
+        ports.append(twisted_reactor.listenTCP(port, factory))
+        srv = _ServerInfo("localhost", port, f"wss://localhost:{port}")
+        assert wait_server_is_up(srv), f"gave up waiting for {srv}"
+        return srv
+
+    yield _create
+
+    for _port in ports:
+        _port.stopListening()
+
+
+def test_websocket_tls_send_and_close_from_listener_thread(serve_twisted_tls_websocket_listener):
+    """The listener runs in a threadpool thread, but twisted transports, and the TLS connection state
+    in particular, may only be touched from the reactor thread. Writing to them directly from the
+    listener thread races with the reactor processing the client's TLS records, which breaks the
+    connection before the client reads the upgrade response."""
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            ws.send("hello")
+
+    server = serve_twisted_tls_websocket_listener(app)
+
+    for _ in range(200):
+        client = websocket.WebSocket(sslopt={"cert_reqs": stdlib_ssl.CERT_NONE})
+        client.connect(server.url, timeout=5)
+        assert client.recv() == "hello"
+        client.close()
