@@ -335,6 +335,7 @@ class WebSocketChannel(Protocol):
         self._closeAbortCall = None
         self._transportPaused = False
         self._closeTimeoutPending = False
+        self._messageParts: list[str | bytes] = []
 
     @property
     def closed(self):
@@ -363,6 +364,15 @@ class WebSocketChannel(Protocol):
             if self.wsproto.state == ConnectionState.LOCAL_CLOSING:
                 # the server closed the websocket already, the listener doesn't consume any more frames
                 continue
+            if isinstance(event, events.Message):
+                # wsproto emits the data of a message as it arrives, frame by frame and in chunks of a
+                # frame, while the listener receives complete messages
+                self._messageParts.append(event.data)
+                if not event.message_finished:
+                    continue
+                data = event.data[:0].join(self._messageParts)
+                self._messageParts = []
+                event = type(event)(data=data)
             # TODO: filter other event types that are not expected by WebSocketAdapter
             # queue the event before ``close()`` queues its poison pill, so the consumer sees the
             # client's close code and reason
