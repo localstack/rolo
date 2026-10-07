@@ -320,6 +320,55 @@ def test_binary_and_text_mode(serve_websocket_listener):
     assert received.get(timeout=5) == b"bar"
 
 
+def test_receive_large_message(serve_websocket_listener):
+    """A frame bigger than a single socket read must still be received as one message."""
+    received = Queue()
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            received.put(ws.receive())
+            received.put(ws.receive())
+
+    server = serve_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    client.send("x" * 1024 * 1024)
+    client.send_binary(b"y" * 1024 * 1024)
+
+    assert received.get(timeout=5) == "x" * 1024 * 1024
+    assert received.get(timeout=5) == b"y" * 1024 * 1024
+    client.close()
+
+
+def test_receive_fragmented_message(serve_websocket_listener):
+    """A message sent as several frames (RFC 6455 section 5.4) must be received as one message."""
+    received = Queue()
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            received.put(ws.receive())
+            received.put(ws.receive())
+
+    server = serve_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    client.send_frame(websocket.ABNF.create_frame("foo", websocket.ABNF.OPCODE_TEXT, fin=0))
+    client.send_frame(websocket.ABNF.create_frame("bar", websocket.ABNF.OPCODE_CONT, fin=0))
+    # control frames can be sent in the middle of a fragmented message
+    client.ping("ping")
+    client.send_frame(websocket.ABNF.create_frame("baz", websocket.ABNF.OPCODE_CONT, fin=1))
+    client.send_frame(websocket.ABNF.create_frame(b"foo", websocket.ABNF.OPCODE_BINARY, fin=0))
+    client.send_frame(websocket.ABNF.create_frame(b"bar", websocket.ABNF.OPCODE_CONT, fin=1))
+
+    assert received.get(timeout=5) == "foobarbaz"
+    assert received.get(timeout=5) == b"foobar"
+    client.close()
+
+
 def test_send_non_confirming_data(serve_websocket_listener):
     match = Queue()
 
