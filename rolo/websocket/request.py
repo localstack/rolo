@@ -109,6 +109,14 @@ class WebSocket:
         """
         self.socket.close(code, reason, timeout)
 
+    @property
+    def last_received_at(self) -> float:
+        """
+        The ``time.monotonic()`` time at which data was last received from the client, or at which the
+        connection was created if nothing was received yet. See ``WebSocketAdapter.last_received_at``.
+        """
+        return self.socket.last_received_at
+
 
 class WebSocketRequest(_SansIORequest):
     """

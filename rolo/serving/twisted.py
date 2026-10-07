@@ -2,6 +2,7 @@
 Bindings to serve rolo through Twisted.
 """
 import logging
+import time
 import typing as t
 from io import BytesIO
 from queue import Empty, Queue
@@ -336,6 +337,7 @@ class WebSocketChannel(Protocol):
         self._transportPaused = False
         self._closeTimeoutPending = False
         self._messageParts: list[str | bytes] = []
+        self.lastReceivedAt = time.monotonic()
 
     @property
     def closed(self):
@@ -356,6 +358,7 @@ class WebSocketChannel(Protocol):
         self.close()
 
     def dataReceived(self, data: bytes) -> None:
+        self.lastReceivedAt = time.monotonic()
         self.wsproto.receive_data(data)
         for event in self.wsproto.events():
             if isinstance(event, events.Ping):
@@ -538,6 +541,10 @@ class TwistedWebSocketAdapter(rolows.WebSocketAdapter):
             self._sendInReactor(events.BytesMessage(event.data))
         else:
             raise TypeError(f"Unexpected event type {event.__class__.__name__}")
+
+    @property
+    def last_received_at(self) -> float:
+        return self.channel.lastReceivedAt
 
     def reject(
         self,
