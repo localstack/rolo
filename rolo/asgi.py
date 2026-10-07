@@ -3,6 +3,7 @@ import asyncio
 import io
 import logging
 import math
+import time
 import typing as t
 from asyncio import AbstractEventLoop
 from concurrent.futures import Executor
@@ -355,6 +356,7 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
         self._receive = receive
         self._send = send
         self._loop = loop
+        self._last_received_at = time.monotonic()
 
     async def asgi_send_async(self, event: "_WebsocketResponse"):
         await self._send(event)
@@ -401,6 +403,7 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
 
         if event["type"] == "websocket.receive":
             event: "WebsocketReceiveEvent"
+            self._last_received_at = time.monotonic()
             text = event.get("text")
             if text is not None:
                 return rolows.TextMessage(text)
@@ -417,6 +420,11 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
         if event["type"] == "websocket.disconnect":
             event: "WebsocketDisconnectEvent"
             raise WebSocketDisconnectedError(event["code"], event.get("reason"))
+
+    @property
+    def last_received_at(self) -> float:
+        # ASGI doesn't pass control frames on, and messages only count once the listener consumes them
+        return self._last_received_at
 
     def send(self, event: rolows.Message, timeout: float = None):
         if isinstance(event, rolows.TextMessage):

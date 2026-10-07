@@ -320,6 +320,56 @@ def test_binary_and_text_mode(serve_websocket_listener):
     assert received.get(timeout=5) == b"bar"
 
 
+def test_last_received_at_message(serve_websocket_listener):
+    received_at = Queue()
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            received_at.put(ws.last_received_at)
+            ws.receive()
+            received_at.put(ws.last_received_at)
+            ws.send("done")
+
+    server = serve_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    connected_at = received_at.get(timeout=5)
+    sent_at = time.monotonic()
+    client.send("foobar")
+    assert client.recv() == "done"
+
+    assert connected_at < sent_at <= received_at.get(timeout=5)
+    client.close()
+
+
+def test_last_received_at_ping(serve_twisted_websocket_listener):
+    # ASGI servers answer pings without passing them on to the application
+    activity = Queue()
+
+    @WebSocketRequest.listener
+    def app(request: WebSocketRequest):
+        with request.accept() as ws:
+            connected_at = ws.last_received_at
+            activity.put(connected_at)
+            poll_condition(lambda: ws.last_received_at > connected_at, timeout=5, interval=0.01)
+            activity.put(ws.last_received_at)
+            ws.receive()
+
+    server = serve_twisted_websocket_listener(app)
+
+    client = websocket.WebSocket()
+    client.connect(server.url.replace("http://", "ws://"))
+    connected_at = activity.get(timeout=5)
+    pinged_at = time.monotonic()
+    client.ping("ping")
+
+    assert connected_at < pinged_at <= activity.get(timeout=5)
+    client.send("done")
+    client.close()
+
+
 def test_receive_large_message(serve_websocket_listener):
     """A frame bigger than a single socket read must still be received as one message."""
     received = Queue()

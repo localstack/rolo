@@ -119,6 +119,15 @@ class WebSocketAdapter:
         """
         raise NotImplementedError
 
+    @property
+    def last_received_at(self) -> float:
+        """
+        The ``time.monotonic()`` time at which data was last received from the client, or at which the
+        connection was created if nothing was received yet. Servers that handle the control frames
+        themselves count them as well when they can see them, so a client that only pings is active.
+        """
+        raise NotImplementedError
+
 
 class WebSocketListener(t.Protocol):
     """
