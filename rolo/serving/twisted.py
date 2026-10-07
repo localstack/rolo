@@ -477,8 +477,12 @@ class WebSocketChannel(Protocol):
             # the 101 upgrade response was written raw to the transport, so ``Request.finish()``
             # must not write its own (never started) HTTP response into the websocket stream
             self.request.startedWriting = 1
+        # the HTTP channel is registered as producer of its transport, and a TLS transport defers its shutdown until
+        # no producer is registered. ``HTTPChannel.loseConnection`` unregisters it first, and ``finish`` detaches
+        # the channel from the request.
+        channel = self.request.channel
         self.request.finish()
-        self.request.transport.loseConnection()
+        channel.loseConnection()
         # special internal poison pill
         self.eventQueue.put_nowait(events.CloseConnection(None))
 
