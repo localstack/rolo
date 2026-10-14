@@ -162,14 +162,16 @@ class TwistedHeaderAdapter(TwistedHeaders):
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        # initialized first, since ``Headers.__init__`` may already set headers
         self._caseMappings = {}
+        super().__init__(*args, **kwargs)
 
     def rememberHeaderCasing(self, name: Union[str, bytes]) -> None:
         """
         Receives a raw header in its original casing and stores it to later restore the header casing in
-        ``getAllRawHeaders``.
+        ``getAllRawHeaders``. If a header is remembered multiple times with different casing, the last one wins.
         """
+        name = _encode_header_name(name)
         self._caseMappings[name.lower()] = name
 
     def getAllRawHeaders(self) -> Iterator[Tuple[bytes, Sequence[bytes]]]:
@@ -177,17 +179,45 @@ class TwistedHeaderAdapter(TwistedHeaders):
             yield self._caseMappings.get(k.lower(), k), v
 
 
+class TwistedRequestHeaderAdapter(TwistedHeaderAdapter):
+    """
+    Request headers, which keep the casing of the first occurrence of a header, like AWS does when a client sends
+    a header multiple times with different casing.
+
+    They also remember the casing of names set with ``setRawHeaders``: over HTTP/2, twisted's ``H2Stream`` adds the
+    request headers that way, with the names as received (lowercase), without going through
+    ``HTTPChannel.headerReceived``. ``addRawHeader`` is not tracked, since ``HTTPChannel.headerReceived`` calls it
+    with the canonicalized name, before ``HeaderPreservingHTTPChannel`` remembers the name as received.
+    """
+
+    def rememberHeaderCasing(self, name: Union[str, bytes]) -> None:
+        name = _encode_header_name(name)
+        self._caseMappings.setdefault(name.lower(), name)
+
+    def setRawHeaders(self, name: Union[str, bytes], values: Sequence[Union[str, bytes]]) -> None:
+        super().setRawHeaders(name, values)
+        self.rememberHeaderCasing(name)
+
+    def removeHeader(self, name: Union[str, bytes]) -> None:
+        super().removeHeader(name)
+        self._caseMappings.pop(_encode_header_name(name).lower(), None)
+
+
+def _encode_header_name(name: Union[str, bytes]) -> bytes:
+    return name.encode("latin-1") if isinstance(name, str) else name
+
+
 class TwistedRequestAdapter(TwistedRequest):
     """
     Custom twisted server Request object to handle header casing.
     """
 
-    requestHeaders: TwistedHeaderAdapter
+    requestHeaders: TwistedRequestHeaderAdapter
     responseHeaders: TwistedHeaderAdapter
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.requestHeaders = TwistedHeaderAdapter()
+        self.requestHeaders = TwistedRequestHeaderAdapter()
         self.responseHeaders = TwistedHeaderAdapter()
 
 

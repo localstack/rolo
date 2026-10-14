@@ -32,9 +32,9 @@ from twisted.web.server import Site
 from wsproto import ConnectionType, WSConnection, events
 from wsproto.connection import ConnectionState
 
-from rolo import Request, Router, route
+from rolo import Request, Response, Router, route
 from rolo.dispatcher import handler_dispatcher
-from rolo.gateway import Gateway
+from rolo.gateway import Gateway, HandlerChain, RequestContext
 from rolo.gateway.handlers import RouterHandler
 from rolo.serving.twisted import (
     H2_PREFACE,
@@ -43,6 +43,7 @@ from rolo.serving.twisted import (
     PriorKnowledgeHTTPChannelProtocol,
     TwistedGateway,
     TwistedRequestAdapter,
+    TwistedRequestHeaderAdapter,
     TwistedWebSocketAdapter,
     WebSocketChannel,
     WebsocketResourceDecorator,
@@ -315,6 +316,23 @@ def protocol_gateway() -> Gateway:
     return Gateway(request_handlers=[RouterHandler(router, True)])
 
 
+@pytest.fixture
+def headers_gateway() -> Gateway:
+    """A gateway that responds with the request headers, in order and as the application sees them, and the HTTP
+    protocol version the request was served with."""
+
+    def handler(chain: HandlerChain, context: RequestContext, response: Response):
+        response.data = json.dumps(
+            {
+                "headers": list(context.request.headers.items()),
+                "protocol": context.request.environ["SERVER_PROTOCOL"],
+            }
+        )
+        response.mimetype = "application/json"
+
+    return Gateway(request_handlers=[handler])
+
+
 def _h2_get(
     sock: socket.socket, scheme: str, path: str, fragment: bool = False
 ) -> tuple[int, bytes]:
@@ -466,3 +484,77 @@ def test_http1_request_starting_like_http2_preface(protocol_gateway):
         assert isinstance(protocol._channel, HeaderPreservingHTTPChannel)
     finally:
         protocol.connectionLost(Failure(ConnectionDone()))
+
+
+@pytest.mark.parametrize("tls", [True, False], ids=["tls", "cleartext"])
+def test_http2_request_header_casing(
+    serve_twisted_gateway, serve_twisted_tls_server, headers_gateway, tls
+):
+    """Header names are lowercase on the wire over HTTP/2, and have to reach the application as they are, instead of
+    in twisted's canonical casing."""
+    if tls:
+        server = serve_twisted_tls_server(TwistedGateway(headers_gateway))
+        client = httpx.Client(http2=True, verify=False, trust_env=False)
+    else:
+        server = serve_twisted_gateway(headers_gateway)
+        client = httpx.Client(http1=False, http2=True, trust_env=False)
+
+    sent = [("x-lower-custom", "1"), ("x-mixed", "a"), ("x-mixed", "b"), ("cookie", "c=1")]
+    with client:
+        response = client.get(server.url + "/", headers=sent)
+
+    assert response.http_version == "HTTP/2"
+    assert response.json()["protocol"] == "HTTP/2"
+    headers = response.json()["headers"]
+    # twisted adds the `:authority` pseudo-header as `host`
+    assert ["host", f"localhost:{server.port}"] in headers
+    assert [
+        header for header in headers if header[0] in {"x-lower-custom", "x-mixed", "cookie"}
+    ] == [list(header) for header in sent]
+    # httpx adds a few headers of its own, which have to arrive lowercase as well
+    assert all(name.islower() for name, _ in headers)
+
+
+def test_http1_repeated_request_header_casing(serve_twisted_gateway, headers_gateway):
+    """When a header is repeated with different casing, all its values use the casing of the first occurrence, like
+    AWS does."""
+    server = serve_twisted_gateway(headers_gateway)
+
+    conn = http.client.HTTPConnection(host="127.0.0.1", port=server.port)
+    conn.putrequest("GET", "/", skip_host=True, skip_accept_encoding=True)
+    conn.putheader("Host", "localhost")
+    conn.putheader("x-repeated", "first")
+    conn.putheader("X-Repeated", "second")
+    conn.putheader("X-REPEATED", "third")
+    conn.putheader("cookie", "first=1")
+    conn.putheader("Cookie", "second=2")
+    conn.endheaders()
+    response = conn.getresponse()
+
+    assert response.status == 200
+    assert json.loads(response.read())["headers"] == [
+        ["Host", "localhost"],
+        ["x-repeated", "first"],
+        ["x-repeated", "second"],
+        ["x-repeated", "third"],
+        ["cookie", "first=1"],
+        ["cookie", "second=2"],
+    ]
+
+
+def test_request_header_adapter_casing():
+    headers = TwistedRequestHeaderAdapter()
+    headers.setRawHeaders("x-str-name", [b"1"])
+    headers.setRawHeaders(b"x-bytes-name", [b"2"])
+    # the casing of the first occurrence wins
+    headers.setRawHeaders(b"X-Bytes-Name", [b"3"])
+    # unless the header was removed in between
+    headers.setRawHeaders(b"x-removed", [b"4"])
+    headers.removeHeader(b"x-removed")
+    headers.setRawHeaders(b"X-Removed", [b"5"])
+
+    assert list(headers.getAllRawHeaders()) == [
+        (b"x-str-name", [b"1"]),
+        (b"x-bytes-name", [b"3"]),
+        (b"X-Removed", [b"5"]),
+    ]
