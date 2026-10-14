@@ -1,4 +1,5 @@
 """This module provides adapter code to expose a ``Gateway`` as an ASGI compatible application."""
+
 import asyncio
 import concurrent.futures.thread
 from asyncio import AbstractEventLoop

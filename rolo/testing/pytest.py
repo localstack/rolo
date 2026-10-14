@@ -1,4 +1,5 @@
 """rolo pytest plugin used both for internal testing and as testing library."""
+
 import asyncio
 import dataclasses
 import socket
