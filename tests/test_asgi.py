@@ -175,10 +175,14 @@ def test_close_iterable_response(serve_asgi_adapter):
         def __init__(self, data: list[bytes]):
             self.data = data
             self.closed = False
+            # holds the server after the last packet, so it can't close the iterable before
+            # the client has checked that it's still open
+            self.release = threading.Event()
 
         def __iter__(self):
             for packet in self.data:
                 yield packet
+            assert self.release.wait(timeout=5)
 
         def close(self):
             # should be called through the werkzeug layers
@@ -198,6 +202,7 @@ def test_close_iterable_response(serve_asgi_adapter):
     assert next(gen) == b"foo"
     assert next(gen) == b"bar"
     assert not iterable.closed
+    iterable.release.set()
 
     with pytest.raises(StopIteration):
         next(gen)
