@@ -35,8 +35,7 @@ class ServerInfo(Protocol):
 class Server(ServerInfo):
     """the BaseWSGIServer satisfies this protocol."""
 
-    def shutdown(self):
-        ...
+    def shutdown(self): ...
 
 
 @dataclasses.dataclass
@@ -210,9 +209,9 @@ def twisted_reactor():
 
     threading.Thread(target=_run, daemon=True).start()
 
-    assert poll_condition(
-        lambda: reactor.running, timeout=5
-    ), f"gave up waiting for {reactor} to start"
+    assert poll_condition(lambda: reactor.running, timeout=5), (
+        f"gave up waiting for {reactor} to start"
+    )
 
     yield reactor
 

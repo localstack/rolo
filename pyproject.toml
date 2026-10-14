@@ -39,7 +39,6 @@ hypercorn = [
     "hypercorn"
 ]
 dev = [
-    "black==23.10.0",
     "pytest>=7.0",
     "hypercorn",
     "pydantic",
@@ -49,7 +48,7 @@ dev = [
     "coveralls>=3.3",
     "twisted[tls,http2]>=24",
     "httpx[http2]",
-    "ruff==0.1.0"
+    "ruff==0.17.0"
 ]
 docs = [
     "sphinx",
@@ -63,19 +62,10 @@ source = "vcs"
 [tool.hatch.build.hooks.vcs]
 version-file = "rolo/version.py"
 
-[tool.black]
-line_length = 100
-include = '((rolo)/.*\.py$|tests/.*\.py$)'
-#extend_exclude = '()'
-
 [tool.ruff]
 # Always generate Python 3.10-compatible code.
 target-version = "py310"
-line-length = 110
-select = ["B", "C", "E", "F", "I", "W", "T", "B9"]
-ignore = [
-    "E501", # E501 Line too long - handled by black, see https://docs.astral.sh/ruff/faq/#is-ruff-compatible-with-black
-]
+line-length = 100
 exclude = [
     ".venv*",
     "venv*",
@@ -85,6 +75,16 @@ exclude = [
     "*.egg-info",
     ".git",
 ]
+
+[tool.ruff.lint]
+select = ["B", "C", "E", "F", "I", "W", "T", "B9"]
+ignore = [
+    "E501", # E501 Line too long - handled by the formatter, see https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+]
+
+[tool.ruff.format]
+# only the library and its tests are formatted
+exclude = ["docs/**", "examples/**", "*.md"]
 
 [tool.coverage.report]
 exclude_lines = [

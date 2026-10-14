@@ -75,8 +75,7 @@ class Handler(t.Protocol[RC]):
     """The signature of request or response handler in the handler chain. Receives the HandlerChain, the
     RequestContext, and the Response object to be populated."""
 
-    def __call__(self, chain: "HandlerChain", context: RC, response: Response):
-        ...
+    def __call__(self, chain: "HandlerChain", context: RC, response: Response): ...
 
 
 class ExceptionHandler(t.Protocol[RC]):
@@ -85,8 +84,7 @@ class ExceptionHandler(t.Protocol[RC]):
 
     def __call__(
         self, chain: "HandlerChain", exception: Exception, context: RC, response: Response
-    ):
-        ...
+    ): ...
 
 
 def call_safe(
