@@ -334,11 +334,7 @@ def headers_gateway() -> Gateway:
 
 
 def _h2_get(
-    sock: socket.socket,
-    scheme: str,
-    path: str,
-    fragment: bool = False,
-    headers: list[tuple[str, str]] = (),
+    sock: socket.socket, scheme: str, path: str, fragment: bool = False
 ) -> tuple[int, bytes]:
     """Sends a GET request over ``sock`` with the HTTP/2 client of ``h2`` and returns the status code and body.
     With ``fragment``, the connection preface is sent in small pieces that arrive in separate reads.
@@ -347,8 +343,7 @@ def _h2_get(
     conn.initiate_connection()
     conn.send_headers(
         1,
-        [(":method", "GET"), (":path", path), (":scheme", scheme), (":authority", "localhost")]
-        + list(headers),
+        [(":method", "GET"), (":path", path), (":scheme", scheme), (":authority", "localhost")],
         end_stream=True,
     )
     data = conn.data_to_send()
@@ -497,34 +492,27 @@ def test_http2_request_header_casing(
 ):
     """Header names are lowercase on the wire over HTTP/2, and have to reach the application as they are, instead of
     in twisted's canonical casing."""
-    headers = [("x-lower-custom", "1"), ("x-mixed", "a"), ("x-mixed", "b"), ("cookie", "c=1")]
-
     if tls:
         server = serve_twisted_tls_server(TwistedGateway(headers_gateway))
-        context = stdlib_ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = stdlib_ssl.CERT_NONE
-        context.set_alpn_protocols(["h2"])
-        with socket.create_connection((server.host, server.port), timeout=5) as raw_sock:
-            with context.wrap_socket(raw_sock, server_hostname="localhost") as sock:
-                status, body = _h2_get(sock, "https", "/", headers=headers)
+        client = httpx.Client(http2=True, verify=False, trust_env=False)
     else:
         server = serve_twisted_gateway(headers_gateway)
-        with socket.create_connection((server.host, server.port), timeout=5) as sock:
-            status, body = _h2_get(sock, "http", "/", headers=headers)
+        client = httpx.Client(http1=False, http2=True, trust_env=False)
 
-    assert status == 200
-    assert json.loads(body) == {
-        # twisted adds the `:authority` pseudo-header as `host`
-        "headers": [
-            ["host", "localhost"],
-            ["x-lower-custom", "1"],
-            ["x-mixed", "a"],
-            ["x-mixed", "b"],
-            ["cookie", "c=1"],
-        ],
-        "protocol": "HTTP/2",
-    }
+    sent = [("x-lower-custom", "1"), ("x-mixed", "a"), ("x-mixed", "b"), ("cookie", "c=1")]
+    with client:
+        response = client.get(server.url + "/", headers=sent)
+
+    assert response.http_version == "HTTP/2"
+    assert response.json()["protocol"] == "HTTP/2"
+    headers = response.json()["headers"]
+    # twisted adds the `:authority` pseudo-header as `host`
+    assert ["host", f"localhost:{server.port}"] in headers
+    assert [
+        header for header in headers if header[0] in {"x-lower-custom", "x-mixed", "cookie"}
+    ] == [list(header) for header in sent]
+    # httpx adds a few headers of its own, which have to arrive lowercase as well
+    assert all(name.islower() for name, _ in headers)
 
 
 def test_http1_repeated_request_header_casing(serve_twisted_gateway, headers_gateway):
