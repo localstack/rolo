@@ -1,4 +1,5 @@
 """Several gateway handlers"""
+
 import typing as t
 
 from werkzeug.datastructures import Headers, MultiDict

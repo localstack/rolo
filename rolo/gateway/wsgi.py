@@ -1,4 +1,5 @@
 """This module contains adapter code that exposes a ``Gateway`` as a WSGI application."""
+
 import typing as t
 
 from werkzeug.datastructures import Headers, MultiDict

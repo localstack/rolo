@@ -13,6 +13,7 @@ treated like an endpoint for the respective HTTP method. The following shows an 
     router = Router(dispatcher=resource_dispatcher())
     router.add(Resource("/foo", Foo())
 """
+
 from typing import Any, Iterable, Optional, Type
 
 from werkzeug.routing import Map, Rule, RuleFactory
