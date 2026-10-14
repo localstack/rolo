@@ -345,6 +345,10 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
     _receive: "ASGIReceiveCallable"
     _send: "ASGISendCallable"
 
+    close_timeout: float = 5
+    """Seconds to wait for the client to echo the server's close frame, before the ASGI app returns and leaves
+    the TCP connection to the server."""
+
     def __init__(
         self,
         scope: "WebsocketScope",
@@ -357,12 +361,35 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
         self._send = send
         self._loop = loop
         self._last_received_at = time.monotonic()
+        self._close_sent = False
+        self._disconnected = False
 
     async def asgi_send_async(self, event: "_WebsocketResponse"):
         await self._send(event)
 
     async def asgi_receive_async(self) -> "_WebsocketRequest":
-        return await self._receive()
+        event = await self._receive()
+        if event["type"] == "websocket.disconnect":
+            self._disconnected = True
+        return event
+
+    async def wait_closed(self) -> None:
+        """
+        Waits for the client to echo the close frame the server sent, so the close handshake completes before the
+        ASGI app returns. An ASGI server can terminate the TCP connection as soon as the app returns, and the
+        client's close frame then arriving on a closed socket makes the kernel reset the connection (RFC 6455
+        section 5.5.1). Frames the client sends in the meantime are discarded.
+        """
+        if not self._close_sent or self._disconnected:
+            return
+        try:
+            await asyncio.wait_for(self._receive_until_disconnect(), self.close_timeout)
+        except asyncio.TimeoutError:
+            pass
+
+    async def _receive_until_disconnect(self) -> None:
+        while not self._disconnected:
+            await self.asgi_receive_async()
 
     def asgi_send(self, event: "_WebsocketResponse", timeout: float = None) -> None:
         """
@@ -496,6 +523,7 @@ class ASGIWebSocketAdapter(rolows.WebSocketAdapter):
         )
 
     def close(self, code: int = 1001, reason: str = None, timeout: float = None):
+        self._close_sent = True
         self.asgi_send(
             {
                 "type": "websocket.close",
@@ -659,6 +687,8 @@ class ASGIAdapter:
                 exc_info=LOG.isEnabledFor(logging.DEBUG),
             )
             raise
+
+        await environ["rolo.websocket"].wait_closed()
 
     async def handle_lifespan(
         self, scope: "HTTPScope", receive: "ASGIReceiveCallable", send: "ASGISendCallable"

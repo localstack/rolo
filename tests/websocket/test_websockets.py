@@ -221,7 +221,11 @@ def test_close_handshake_server_initiated(serve_websocket_listener):
 
     frame = client.recv_frame()
     assert frame.opcode == websocket.ABNF.OPCODE_CLOSE
+    # a server that terminates the TCP connection without waiting for the echo makes the kernel reset the
+    # connection once the echo arrives, and the reset then fails the read below
+    time.sleep(0.1)
     client.send_close(status=struct.unpack("!H", frame.data[:2])[0])
+    time.sleep(0.1)
 
     client.sock.settimeout(5)
     assert client.sock.recv(1) == b"", "expected the server to terminate the TCP connection"
@@ -273,6 +277,7 @@ def test_websocket_headers(serve_websocket_listener):
     assert headers["Connection"] == "Upgrade"
     assert headers["Authorization"] == "Basic let-me-in"
     assert headers["CasedHeader"] == "hello"
+    client.close()
 
 
 def test_websocket_reject(serve_websocket_listener):
@@ -318,6 +323,7 @@ def test_binary_and_text_mode(serve_websocket_listener):
 
     assert received.get(timeout=5) == "textbar"
     assert received.get(timeout=5) == b"bar"
+    client.close()
 
 
 def test_last_received_at_message(serve_websocket_listener):
@@ -436,6 +442,7 @@ def test_send_non_confirming_data(serve_websocket_listener):
 
     e = match.get(timeout=5)
     assert e.match("Cannot send data type <class 'dict'> over websocket")
+    client.close()
 
 
 def test_router_integration(serve_websocket_listener):
@@ -457,6 +464,7 @@ def test_router_integration(serve_websocket_listener):
     assert client.recv() == "foo"
     assert client.recv() == "id=bar"
     assert "CasedHeader" in json.loads(client.recv())
+    client.close()
 
 
 def test_send_many_messages(serve_websocket_listener):
