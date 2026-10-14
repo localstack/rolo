@@ -11,6 +11,7 @@ import time
 import h2.config
 import h2.connection
 import h2.events
+import httpx
 import pytest
 import requests
 import websocket
@@ -397,6 +398,37 @@ def test_http2_cleartext_prior_knowledge(serve_twisted_gateway, protocol_gateway
 
     assert status == 200
     assert json.loads(body) == {"protocol": "HTTP/2"}
+
+
+@pytest.mark.parametrize("tls", [True, False], ids=["tls", "cleartext"])
+def test_http2_with_httpx(serve_twisted_gateway, serve_twisted_tls_server, tls):
+    """Smoke test with a regular HTTP/2 client: httpx negotiates HTTP/2 via ALPN over TLS, and uses prior knowledge
+    over cleartext."""
+    router = Router(handler_dispatcher())
+
+    @route("/echo", methods=["POST"])
+    def echo(request: Request):
+        return {
+            "protocol": request.environ["SERVER_PROTOCOL"],
+            "body": request.get_data(as_text=True),
+        }
+
+    router.add(echo)
+    gateway = Gateway(request_handlers=[RouterHandler(router, True)])
+
+    if tls:
+        server = serve_twisted_tls_server(TwistedGateway(gateway))
+        client = httpx.Client(http2=True, verify=False, trust_env=False)
+    else:
+        server = serve_twisted_gateway(gateway)
+        client = httpx.Client(http1=False, http2=True, trust_env=False)
+
+    with client:
+        response = client.post(server.url + "/echo", content=b"hello")
+
+    assert response.http_version == "HTTP/2"
+    assert response.status_code == 200
+    assert response.json() == {"protocol": "HTTP/2", "body": "hello"}
 
 
 def _connect_protocol(

@@ -48,6 +48,7 @@ dev = [
     "coverage[toml]>=5.0.0",
     "coveralls>=3.3",
     "twisted[tls,http2]>=24",
+    "httpx[http2]",
     "ruff==0.1.0"
 ]
 docs = [
