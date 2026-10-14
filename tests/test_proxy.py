@@ -111,7 +111,7 @@ class TestPathForwarder:
         assert response.ok
         assert response.text == "ok/bar/"  # it's calling /bar/ because it's part of the root URL
 
-    def test_xff_header(self, router_server, httpserver: HTTPServer):
+    def test_x_forwarded_for_header(self, router_server, httpserver: HTTPServer):
         router, proxy = router_server
         backend = httpserver
 
@@ -132,6 +132,28 @@ class TestPathForwarder:
         assert response.ok
         headers = response.json()
         assert headers["X-Forwarded-For"] == "127.0.0.2, 127.0.0.1"
+
+    def test_x_forwarded_proto_header(self, router_server, httpserver: HTTPServer):
+        router, proxy = router_server
+        backend = httpserver
+
+        def _echo_headers(request):
+            return Response(json.dumps(dict(request.headers)), mimetype="application/json")
+
+        backend.expect_request("/echo").respond_with_handler(_echo_headers)
+
+        router.add("/<path:path>", ProxyHandler(backend.url_for("/")))
+
+        response = requests.get(proxy.url + "/echo")
+        assert response.ok
+        headers = response.json()
+        assert headers["X-Forwarded-Proto"] == "http"
+
+        # Any existing X-Forwarded-Proto header should not be overwritten
+        response = requests.get(proxy.url + "/echo", headers={"X-Forwarded-Proto": "https"})
+        assert response.ok
+        headers = response.json()
+        assert headers["X-Forwarded-Proto"] == "https"
 
     def test_post_form_data_with_query_args(self, router_server, httpserver: HTTPServer):
         router, proxy = router_server

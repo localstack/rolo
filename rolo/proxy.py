@@ -75,6 +75,9 @@ class Proxy(HttpClient):
             else:
                 headers["X-Forwarded-For"] = f"{client_ip}"
 
+        if "X-Forwarded-Proto" not in request.headers and "X-Forwarded-Proto" not in headers:
+            headers["X-Forwarded-Proto"] = f"{request.scheme}"
+
         if forward_path is None:
             forward_path = get_raw_path(request)
         if forward_path:
