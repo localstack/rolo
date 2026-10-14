@@ -15,7 +15,7 @@ from twisted.internet.threads import blockingCallFromThread
 from twisted.protocols.policies import ProtocolWrapper
 from twisted.python import threadable
 from twisted.python.components import proxyForInterface
-from twisted.web.http import HTTPChannel, _GenericHTTPChannelProtocol, urlparse
+from twisted.web.http import H2_ENABLED, HTTPChannel, _GenericHTTPChannelProtocol, urlparse
 from twisted.web.http_headers import Headers as TwistedHeaders
 from twisted.web.resource import IResource
 from twisted.web.server import NOT_DONE_YET, Request, Site
@@ -37,6 +37,9 @@ from rolo.websocket import (
 from rolo.websocket import (
     adapter as rolows,
 )
+
+if H2_ENABLED:
+    from twisted.web._http2 import H2Connection
 
 if t.TYPE_CHECKING:
     from _typeshed.wsgi import WSGIEnvironment
@@ -188,6 +191,75 @@ class TwistedRequestAdapter(TwistedRequest):
         self.responseHeaders = TwistedHeaderAdapter()
 
 
+H2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+"""The connection preface every HTTP/2 client sends first (RFC 9113, section 3.4)."""
+
+
+class PriorKnowledgeHTTPChannelProtocol(_GenericHTTPChannelProtocol):
+    """
+    A ``_GenericHTTPChannelProtocol`` that also switches to HTTP/2 when the client starts the connection with the
+    HTTP/2 preface without having negotiated ``h2`` via ALPN. Twisted only switches when ALPN negotiated ``h2``,
+    and otherwise passes the preface to the HTTP/1 channel, which responds with a ``400 Bad Request``.
+
+    Clients do this over cleartext TCP ("prior knowledge"), but some also do it over TLS without sending ALPN at
+    all, like the AWS SDK for Java v2 Netty client with its default ``ProtocolNegotiation.ASSUME_PROTOCOL``. AWS
+    accepts such connections.
+    """
+
+    _prefaceBuffer = b""
+
+    def dataReceived(self, data):
+        if self._negotiatedProtocol is not None:
+            return self._channel.dataReceived(data)
+
+        if getattr(self._channel.transport, "negotiatedProtocol", None) is not None:
+            # a protocol was negotiated via ALPN (or by a wrapping transport), which twisted handles
+            return super().dataReceived(data)
+
+        # the preface may arrive in fragments, so we buffer until we can tell whether this is the preface
+        data = self._prefaceBuffer + data
+        if len(data) < len(H2_PREFACE) and H2_PREFACE.startswith(data):
+            self._prefaceBuffer = data
+            return
+        self._prefaceBuffer = b""
+
+        if data.startswith(H2_PREFACE):
+            self._switchToH2()
+        else:
+            self._negotiatedProtocol = b"http/1.1"
+
+        return self._channel.dataReceived(data)
+
+    def _switchToH2(self):
+        """
+        Replaces the HTTP/1 channel with an ``H2Connection``, the same way
+        ``_GenericHTTPChannelProtocol.dataReceived`` does when ALPN negotiated ``h2``.
+        """
+        if not H2_ENABLED:
+            raise ValueError("Received HTTP/2 connection preface without HTTP/2 support.")
+
+        # unregister the HTTPChannel from the transport so that the H2Connection can register itself
+        networkProducer = self._channel._networkProducer
+        networkProducer.unregisterProducer()
+
+        # cancel the old channel's timeout
+        self._channel.setTimeout(None)
+
+        transport = self._channel.transport
+        self._channel = H2Connection()
+        self._channel.requestFactory = self._requestFactory
+        self._channel.site = self._site
+        self._channel.factory = self._factory
+        self._channel.timeOut = self._timeOut
+        self._channel.callLater = self._callLater
+        self._channel.makeConnection(transport)
+
+        # register the H2Connection as the transport's producer, so that the transport can apply back pressure
+        networkProducer.registerProducer(self._channel, True)
+
+        self._negotiatedProtocol = b"h2"
+
+
 class HeaderPreservingHTTPChannel(HTTPChannel):
     """
     Special HTTPChannel implementation that uses ``Headers._caseMappings`` to retain header casing both for
@@ -198,7 +270,7 @@ class HeaderPreservingHTTPChannel(HTTPChannel):
 
     @staticmethod
     def protocol_factory():
-        return _GenericHTTPChannelProtocol(HeaderPreservingHTTPChannel())
+        return PriorKnowledgeHTTPChannelProtocol(HeaderPreservingHTTPChannel())
 
     def headerReceived(self, line):
         if not super().headerReceived(line):

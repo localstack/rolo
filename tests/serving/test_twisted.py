@@ -2,10 +2,15 @@ import datetime
 import http.client
 import io
 import json
+import socket
 import ssl as stdlib_ssl
 import struct
 import threading
+import time
 
+import h2.config
+import h2.connection
+import h2.events
 import pytest
 import requests
 import websocket
@@ -14,7 +19,13 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from twisted.internet import ssl
+from twisted.internet.address import IPv4Address
+from twisted.internet.error import ConnectionDone
+from twisted.internet.task import Clock
+from twisted.internet.testing import StringTransport
 from twisted.protocols.tls import TLSMemoryBIOFactory
+from twisted.python.failure import Failure
+from twisted.web._http2 import H2Connection
 from twisted.web.http_headers import Headers as TwistedHeaders
 from twisted.web.server import Site
 from wsproto import ConnectionType, WSConnection, events
@@ -25,8 +36,11 @@ from rolo.dispatcher import handler_dispatcher
 from rolo.gateway import Gateway
 from rolo.gateway.handlers import RouterHandler
 from rolo.serving.twisted import (
+    H2_PREFACE,
     HeaderPreservingHTTPChannel,
     HeaderPreservingWSGIResource,
+    PriorKnowledgeHTTPChannelProtocol,
+    TwistedGateway,
     TwistedRequestAdapter,
     TwistedWebSocketAdapter,
     WebSocketChannel,
@@ -192,9 +206,36 @@ def self_signed_cert() -> tuple[bytes, bytes]:
 
 
 @pytest.fixture
-def serve_twisted_tls_websocket_listener(twisted_reactor, self_signed_cert):
-    """Like ``serve_twisted_websocket_listener``, but serves the listener over TLS."""
+def serve_twisted_tls_server(twisted_reactor, self_signed_cert):
+    """Like ``serve_twisted_tcp_server``, but serves the protocol factory over TLS. The server accepts ``h2`` and
+    ``http/1.1`` via ALPN."""
     ports = []
+
+    def _create(protocol_factory, scheme: str = "https"):
+        cert_pem, key_pem = self_signed_cert
+        certificate = ssl.PrivateCertificate.loadPEM(cert_pem + key_pem)
+        options = ssl.CertificateOptions(
+            privateKey=certificate.privateKey.original,
+            certificate=certificate.original,
+            acceptableProtocols=[b"h2", b"http/1.1"],
+        )
+        factory = TLSMemoryBIOFactory(options, False, protocol_factory)
+
+        port = get_random_tcp_port()
+        ports.append(twisted_reactor.listenTCP(port, factory))
+        srv = _ServerInfo("localhost", port, f"{scheme}://localhost:{port}")
+        assert wait_server_is_up(srv), f"gave up waiting for {srv}"
+        return srv
+
+    yield _create
+
+    for _port in ports:
+        _port.stopListening()
+
+
+@pytest.fixture
+def serve_twisted_tls_websocket_listener(twisted_reactor, serve_twisted_tls_server):
+    """Like ``serve_twisted_websocket_listener``, but serves the listener over TLS."""
 
     def _create(websocket_listener: WebSocketListener):
         site = Site(
@@ -207,21 +248,9 @@ def serve_twisted_tls_websocket_listener(twisted_reactor, self_signed_cert):
             requestFactory=TwistedRequestAdapter,
         )
         site.protocol = HeaderPreservingHTTPChannel.protocol_factory
-
-        cert_pem, key_pem = self_signed_cert
-        certificate = ssl.PrivateCertificate.loadPEM(cert_pem + key_pem)
-        factory = TLSMemoryBIOFactory(certificate.options(), False, site)
-
-        port = get_random_tcp_port()
-        ports.append(twisted_reactor.listenTCP(port, factory))
-        srv = _ServerInfo("localhost", port, f"wss://localhost:{port}")
-        assert wait_server_is_up(srv), f"gave up waiting for {srv}"
-        return srv
+        return serve_twisted_tls_server(site, scheme="wss")
 
     yield _create
-
-    for _port in ports:
-        _port.stopListening()
 
 
 def test_websocket_tls_send_and_close_from_listener_thread(serve_twisted_tls_websocket_listener):
@@ -270,3 +299,138 @@ def test_websocket_tls_close_handshake_client_initiated(serve_twisted_tls_websoc
     client.sock.settimeout(5)
     assert client.sock.recv(1) == b"", "expected the server to terminate the TLS connection"
     assert disconnected.wait(timeout=3)
+
+
+@pytest.fixture
+def protocol_gateway() -> Gateway:
+    """A gateway that responds to ``/protocol`` with the HTTP protocol version the request was served with."""
+    router = Router(handler_dispatcher())
+
+    @route("/protocol")
+    def protocol(request: Request):
+        return {"protocol": request.environ["SERVER_PROTOCOL"]}
+
+    router.add(protocol)
+    return Gateway(request_handlers=[RouterHandler(router, True)])
+
+
+def _h2_get(
+    sock: socket.socket, scheme: str, path: str, fragment: bool = False
+) -> tuple[int, bytes]:
+    """Sends a GET request over ``sock`` with the HTTP/2 client of ``h2`` and returns the status code and body.
+    With ``fragment``, the connection preface is sent in small pieces that arrive in separate reads.
+    """
+    conn = h2.connection.H2Connection(h2.config.H2Configuration(client_side=True))
+    conn.initiate_connection()
+    conn.send_headers(
+        1,
+        [(":method", "GET"), (":path", path), (":scheme", scheme), (":authority", "localhost")],
+        end_stream=True,
+    )
+    data = conn.data_to_send()
+
+    if fragment:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        for i in range(0, len(H2_PREFACE), 5):
+            sock.sendall(data[i : min(i + 5, len(H2_PREFACE))])
+            time.sleep(0.01)
+        sock.sendall(data[len(H2_PREFACE) :])
+    else:
+        sock.sendall(data)
+
+    status, body = None, b""
+    first = True
+    while True:
+        received = sock.recv(65535)
+        assert received, "server closed the connection"
+        if first:
+            assert not received.startswith(b"HTTP/"), f"server responded with HTTP/1: {received!r}"
+            first = False
+
+        for event in conn.receive_data(received):
+            if isinstance(event, h2.events.ResponseReceived):
+                status = int(dict(event.headers)[b":status"])
+            elif isinstance(event, h2.events.DataReceived):
+                body += event.data
+                conn.acknowledge_received_data(event.flow_controlled_length, event.stream_id)
+            elif isinstance(event, h2.events.StreamEnded):
+                return status, body
+        sock.sendall(conn.data_to_send())
+
+
+def test_http1_over_tls(serve_twisted_tls_server, protocol_gateway):
+    server = serve_twisted_tls_server(TwistedGateway(protocol_gateway))
+
+    response = requests.get(server.url + "/protocol", verify=False)
+
+    assert response.status_code == 200
+    assert response.json() == {"protocol": "HTTP/1.1"}
+
+
+@pytest.mark.parametrize("fragment", [False, True], ids=["whole", "fragmented"])
+@pytest.mark.parametrize("alpn", [True, False], ids=["alpn", "no-alpn"])
+def test_http2_over_tls(serve_twisted_tls_server, protocol_gateway, alpn, fragment):
+    """Without ALPN, the client starts sending HTTP/2 right after the TLS handshake. The AWS SDK for Java v2 Netty
+    client does this by default."""
+    server = serve_twisted_tls_server(TwistedGateway(protocol_gateway))
+
+    context = stdlib_ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = stdlib_ssl.CERT_NONE
+    if alpn:
+        context.set_alpn_protocols(["h2"])
+
+    with socket.create_connection((server.host, server.port), timeout=5) as raw_sock:
+        with context.wrap_socket(raw_sock, server_hostname="localhost") as sock:
+            status, body = _h2_get(sock, "https", "/protocol", fragment=fragment)
+
+    assert status == 200
+    assert json.loads(body) == {"protocol": "HTTP/2"}
+
+
+@pytest.mark.parametrize("fragment", [False, True], ids=["whole", "fragmented"])
+def test_http2_cleartext_prior_knowledge(serve_twisted_gateway, protocol_gateway, fragment):
+    server = serve_twisted_gateway(protocol_gateway)
+
+    with socket.create_connection((server.host, server.port), timeout=5) as sock:
+        status, body = _h2_get(sock, "http", "/protocol", fragment=fragment)
+
+    assert status == 200
+    assert json.loads(body) == {"protocol": "HTTP/2"}
+
+
+def _connect_protocol(
+    gateway: Gateway,
+) -> tuple[PriorKnowledgeHTTPChannelProtocol, StringTransport]:
+    protocol = TwistedGateway(gateway).buildProtocol(IPv4Address("TCP", "127.0.0.1", 12345))
+    # schedule the channels' timeouts on a fake clock instead of the reactor running in another thread
+    protocol.callLater = Clock().callLater
+    transport = StringTransport()
+    protocol.makeConnection(transport)
+    return protocol, transport
+
+
+def test_http2_preface_received_byte_by_byte(protocol_gateway):
+    protocol, transport = _connect_protocol(protocol_gateway)
+    try:
+        for i in range(len(H2_PREFACE)):
+            assert not isinstance(protocol._channel, H2Connection)
+            protocol.dataReceived(H2_PREFACE[i : i + 1])
+
+        assert isinstance(protocol._channel, H2Connection)
+        assert not transport.value().startswith(b"HTTP/")
+    finally:
+        protocol.connectionLost(Failure(ConnectionDone()))
+
+
+def test_http1_request_starting_like_http2_preface(protocol_gateway):
+    protocol, transport = _connect_protocol(protocol_gateway)
+    try:
+        protocol.dataReceived(b"PRI * HTTP/")
+        assert transport.value() == b""
+
+        protocol.dataReceived(b"1.1")
+
+        assert isinstance(protocol._channel, HeaderPreservingHTTPChannel)
+    finally:
+        protocol.connectionLost(Failure(ConnectionDone()))
