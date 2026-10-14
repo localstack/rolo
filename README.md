@@ -12,7 +12,7 @@
   <a href="https://pypi.org/project/rolo/"><img alt="PyPI Version" src="https://img.shields.io/pypi/v/rolo?color=blue"></a>
   <a href="https://coveralls.io/github/localstack/rolo?branch=main"><img src="https://coveralls.io/repos/github/localstack/rolo/badge.svg?branch=main"></a>
   <a href="https://img.shields.io/pypi/l/rolo.svg"><img alt="PyPI License" src="https://img.shields.io/pypi/l/rolo.svg"></a>
-  <a href="https://github.com/psf/black"><img alt="Code style: black" src="https://img.shields.io/badge/code%20style-black-000000.svg"></a>
+  <a href="https://github.com/astral-sh/ruff"><img alt="Ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
 </p>
 
 Rolo is a flexible framework and library to build HTTP-based server applications beyond microservices and REST APIs.
@@ -143,8 +143,8 @@ to install the python and other developer requirements into a venv run:
 
 ### Format code
 
-We use black and isort as code style tools.
-To execute them, run:
+We use ruff to lint and format the code.
+To run it, execute:
 
     make format
 
