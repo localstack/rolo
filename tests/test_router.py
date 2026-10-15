@@ -357,6 +357,76 @@ class TestRouter:
             router.remove(rule)
         e.match("no such rule")
 
+    @pytest.mark.parametrize("path,request_path", [("/", "/"), ("/<path:path>", "/a/b")])
+    @pytest.mark.parametrize("remove_first", [True, False])
+    def test_remove_preserves_other_endpoint_at_same_host_path(
+        self, path, request_path, remove_first
+    ):
+        router = Router()
+
+        def first(request, args):
+            return Response(b"first")
+
+        def second(request, args):
+            return Response(b"second")
+
+        first_rule = router.add(path, first, host="example.test")
+        second_rule = router.add(path, second, host="example.test")
+        request = Request("GET", request_path, headers={"Host": "example.test"})
+        assert router.dispatch(request).data == b"first"
+        removed, retained = (first_rule, second_rule) if remove_first else (second_rule, first_rule)
+        router.remove(removed)
+        assert router.dispatch(request).data == (b"second" if remove_first else b"first")
+        replacement = router.add(path, removed.endpoint, host="example.test")
+        router.remove(retained)
+        assert router.dispatch(request).data == (b"first" if remove_first else b"second")
+        router.remove(replacement)
+        with pytest.raises(NotFound):
+            router.dispatch(request)
+
+    def test_remove_preserves_other_methods_for_same_endpoint(self):
+        router = Router()
+        get_rule = router.add("/", noop, methods=["GET"])
+        post_rule = router.add("/", noop, methods=["POST"])
+        router.remove(get_rule)
+        assert router.dispatch(Request("POST", "/")).status_code == 200
+        with pytest.raises(MethodNotAllowed):
+            router.dispatch(Request("GET", "/"))
+        router.remove(post_rule)
+
+    def test_remove_rejects_foreign_endpoint_without_modifying_routes(self):
+        router = Router()
+        router.add("/", noop)
+        other = Router().add("/", echo_params_json)
+        with pytest.raises(KeyError):
+            router.remove(other)
+        assert router.dispatch(Request("GET", "/")).status_code == 200
+
+    def test_remove_identical_duplicates_preserves_existing_semantics(self):
+        router = Router()
+        first = router.add("/", noop)
+        router.add("/", noop)
+        router.add("/unrelated", echo_params_json)
+        # Both constructor-identical registrations have always been removed together.
+        # The original handle remains usable after subsequent map cloning.
+        router.remove(first)
+        with pytest.raises(NotFound):
+            router.dispatch(Request("GET", "/"))
+        assert router.dispatch(Request("GET", "/unrelated")).status_code == 200
+        replacement = router.add("/", noop)
+        assert router.dispatch(Request("GET", "/")).status_code == 200
+        router.remove(replacement)
+        with pytest.raises(NotFound):
+            router.dispatch(Request("GET", "/"))
+
+    def test_remove_accepts_generator(self):
+        router = Router()
+        rules = [router.add("/a", noop), router.add("/b", noop)]
+        router.remove(rule for rule in rules)
+        for path in ("/a", "/b"):
+            with pytest.raises(NotFound):
+                router.dispatch(Request("GET", path))
+
     def test_router_route_decorator(self):
         router = Router()
 
