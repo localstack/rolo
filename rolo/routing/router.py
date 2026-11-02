@@ -339,16 +339,24 @@ class Router(t.Generic[E]):
         """
         with self._mutex:
             old = self.url_map
-            for r in rules:
-                if r not in old._rules:
+
+            # Rule equality only compares the URL trace, so it also matches rules
+            # owned by other endpoints. Constructor arguments survive empty() cloning
+            # and retain endpoint, method, host, and subclass-specific distinctions.
+            def identity(rule):
+                return rule.rule, rule.get_empty_kwargs()
+
+            requested = [identity(rule) for rule in rules]
+            existing = [identity(rule) for rule in old.iter_rules()]
+            for key in requested:
+                if key not in existing:
                     raise KeyError("no such rule")
 
             # collect all old rules that are not in the set of rules to remove
             new = _clone_map_without_rules(old)
 
             for old_rule in old.iter_rules():
-                if old_rule in rules:
-                    # this works even with copied rules because of the __eq__ implementation of Rule
+                if identity(old_rule) in requested:
                     continue
 
                 new.add(old_rule.empty())
