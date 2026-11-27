@@ -1,3 +1,4 @@
+import copy
 import functools
 import threading
 import typing as t
@@ -93,17 +94,58 @@ def _clone_map_without_rules(old: Map) -> Map:
     )
 
 
-def _clone_map_with_rules(old: Map) -> Map:
+def _copy_rule(rule: Rule, new_map: Map) -> Rule:
     """
-    Creates a new copy of the existing map, with fresh unbound copies of all its containing rules.
+    Copies a rule that is bound to a map into a rule bound to the given map, without compiling it again. Compiling a
+    rule (its matching parts and its URL builders) is what makes ``Map.add`` expensive. The copy gets its own
+    converters and URL builders, so it keeps no reference to the old map.
+
+    :param rule: the bound rule to copy
+    :param new_map: the map to bind the copy to
+    :return: the copy, bound to ``new_map``
+    """
+    copied = copy.copy(rule)
+    copied.map = new_map
+    copied._converters = {}
+    for name, converter in rule._converters.items():
+        converter = copy.copy(converter)
+        converter.map = new_map
+        copied._converters[name] = converter
+    # the builders are methods bound to the original rule
+    copied._build = rule._build.__func__.__get__(copied)
+    copied._build_unknown = rule._build_unknown.__func__.__get__(copied)
+    return copied
+
+
+def _add_bound_rule(new_map: Map, rule: Rule) -> None:
+    """Does what ``Map.add`` does for a rule that is already bound to the map and compiled."""
+    if not rule.build_only:
+        new_map._matcher.add(rule)
+    new_map._rules_by_endpoint.setdefault(rule.endpoint, []).append(rule)
+    new_map._remap = True
+
+
+def _clone_map_with_rules(old: Map, exclude: t.Container[Rule] = ()) -> Map:
+    """
+    Creates a new copy of the existing map, with copies of all its containing rules.
 
     :param old: the map to copy
+    :param exclude: rules not to copy
     :return: a new instance of the map
     """
     new = _clone_map_without_rules(old)
 
     for old_rule in old.iter_rules():
-        new.add(old_rule.empty())
+        if old_rule in exclude:
+            # this works even with copied rules because of the __eq__ implementation of Rule
+            continue
+        try:
+            copied = _copy_rule(old_rule, new)
+        except AttributeError:
+            # a werkzeug version whose rules lack the compiled state copied above: compile a fresh copy
+            new.add(old_rule.empty())
+            continue
+        _add_bound_rule(new, copied)
 
     return new
 
@@ -297,7 +339,7 @@ class Router(t.Generic[E]):
         Thread safe version of Werkzeug's ``Map.add``. This can be used as low-level method to pass a rule directly
         to the Werkzeug URL map without any manipulation or manual creation of the rule, which ``add`` does. Like
         ``remove``, the method actually clones and replaces the underlying URL Map, to guarantee thread safety with
-        ``dispatch``. Adding rules is therefore a relatively expensive operation.
+        ``dispatch``. The existing rules are copied without compiling them again.
 
         :param rule: the rule to add
         """
@@ -344,15 +386,7 @@ class Router(t.Generic[E]):
                     raise KeyError("no such rule")
 
             # collect all old rules that are not in the set of rules to remove
-            new = _clone_map_without_rules(old)
-
-            for old_rule in old.iter_rules():
-                if old_rule in rules:
-                    # this works even with copied rules because of the __eq__ implementation of Rule
-                    continue
-
-                new.add(old_rule.empty())
-            self.url_map = new
+            self.url_map = _clone_map_with_rules(old, exclude=rules)
 
     def dispatch(self, request: Request) -> Response:
         """

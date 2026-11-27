@@ -1,11 +1,13 @@
+import gc
 import threading
+import weakref
 from typing import Callable, List, Tuple
 
 import pytest
 import requests
 import werkzeug
 from werkzeug.exceptions import MethodNotAllowed, NotFound, SecurityError
-from werkzeug.routing import RequestRedirect, Submount
+from werkzeug.routing import RequestRedirect, Rule, Submount
 
 from rolo import Request, Response, Router
 from rolo.routing import RequestArguments, RuleAdapter, WithHost, route
@@ -356,6 +358,69 @@ class TestRouter:
         with pytest.raises(KeyError) as e:
             router.remove(rule)
         e.match("no such rule")
+
+    def test_add_does_not_recompile_existing_rules(self, monkeypatch):
+        compiled = []
+        compile_rule = Rule.compile
+
+        def _compile(rule):
+            compiled.append(rule.rule)
+            compile_rule(rule)
+
+        monkeypatch.setattr(Rule, "compile", _compile)
+
+        router = Router()
+        for i in range(10):
+            router.add(f"/rule-{i}", noop)
+        router.remove(router.add("/removed", noop))
+
+        assert sorted(compiled) == sorted([f"/rule-{i}" for i in range(10)] + ["/removed"])
+
+    def test_copied_rules_match_and_build(self):
+        router = Router()
+
+        def users(request, args):
+            return echo_params_json(request, args)
+
+        def ports(request, args):
+            return echo_params_json(request, args)
+
+        router.add("/users/<int:user_id>/<path:rest>", users)
+        router.add("/ports", ports, host="localhost<port:port>")
+        # copy the rules into new maps a few times
+        for i in range(3):
+            router.add(f"/other-{i}", noop)
+        router.remove(router.add("/removed", noop))
+
+        response = router.dispatch(Request("GET", "/users/12/foo/bar"))
+        assert response.json == {"user_id": 12, "rest": "foo/bar"}
+        response = router.dispatch(Request("GET", "/ports", headers={"Host": "localhost:4566"}))
+        assert response.json == {"port": 4566}
+
+        for rule in router.url_map.iter_rules():
+            assert rule.map is router.url_map
+            assert all(converter.map is router.url_map for converter in rule._converters.values())
+
+        adapter = router.url_map.bind("localhost")
+        assert (
+            adapter.build(users, {"__host__": "localhost", "user_id": 7, "rest": "a/b"})
+            == "/users/7/a/b"
+        )
+        assert (
+            adapter.build(users, {"__host__": "localhost", "user_id": 7, "rest": "a", "q": "x"})
+            == "/users/7/a?q=x"
+        )
+
+    def test_replaced_maps_are_garbage_collected(self):
+        router = Router()
+        router.add("/users/<int:user_id>", noop)
+        old_map = weakref.ref(router.url_map)
+
+        router.add("/foo", noop)
+        router.remove(router.add("/bar", noop))
+        gc.collect()
+
+        assert old_map() is None
 
     def test_router_route_decorator(self):
         router = Router()
